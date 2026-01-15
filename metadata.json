@@ -1,5 +1,0 @@
-{
-  "name": "SymSys Modified Turing Test",
-  "description": "A cognitive science experiment app allowing students to chat with and evaluate various agents including Eliza, Gemini, and simulated peers.",
-  "requestFramePermissions": []
-}
