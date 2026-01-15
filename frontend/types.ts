@@ -30,3 +30,13 @@ export interface EvaluationResult {
   rating: number; // 1-7
   timestamp: number;
 }
+
+export interface ChatStats {
+  turnsUser: number;
+  turnsAgent: number;
+  turnsTotal: number;
+  wordsUser: number;
+  wordsAgent: number;
+  wordsTotal: number;
+  durationSeconds: number;
+}

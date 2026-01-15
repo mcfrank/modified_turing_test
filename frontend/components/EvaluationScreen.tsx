@@ -4,9 +4,10 @@ import { Condition } from '../types';
 interface EvaluationScreenProps {
   condition: Condition;
   onSubmit: (rating: number) => void;
+  loggingMessage?: string | null;
 }
 
-export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, onSubmit }) => {
+export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, onSubmit, loggingMessage }) => {
   const [rating, setRating] = useState<number | null>(null);
 
   const getQuestion = () => {
@@ -67,6 +68,11 @@ export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, o
         >
           Submit Evaluation
         </button>
+        {loggingMessage && (
+          <div className="mt-4 text-center text-sm text-emerald-400">
+            {loggingMessage}
+          </div>
+        )}
       </div>
     </div>
   );

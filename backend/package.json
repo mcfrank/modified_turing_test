@@ -1,0 +1,15 @@
+{
+  "name": "modified-turing-test-backend",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^142.0.0",
+    "socket.io": "^4.7.5"
+  }
+}

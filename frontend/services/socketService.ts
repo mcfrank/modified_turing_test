@@ -1,5 +1,5 @@
 import { io, Socket } from "socket.io-client";
-import { Message } from "../types";
+import { Condition, Message } from "../types";
 
 // REPLACE THIS WITH YOUR DEPLOYED CLOUD RUN URL OR LOCALHOST
 const SOCKET_URL = "http://localhost:8080"; 
@@ -21,10 +21,10 @@ class SocketService {
     });
   }
 
-  joinQueue(onMatchFound: () => void) {
+  joinQueue(condition: Condition, onMatchFound: () => void) {
     if (!this.socket) this.connect();
 
-    this.socket?.emit("join_queue");
+    this.socket?.emit("join_queue", { condition });
     
     this.socket?.on("match_found", (data: { roomId: string }) => {
       this.roomId = data.roomId;

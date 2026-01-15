@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AgentType, Message, Condition } from '../types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AgentType, Message, Condition, ChatStats } from '../types';
 import { sendToAgent, getInitialGreeting } from '../services/chatOrchestrator';
 import { socketService } from '../services/socketService';
 
@@ -12,7 +12,7 @@ const DEBUG = true;
 interface ChatScreenProps {
   condition: Condition;
   agentType: AgentType;
-  onFinished: () => void;
+  onFinished: (stats: ChatStats) => void;
 }
 
 const TOTAL_TIME_MS = 3 * 60 * 1000; // 3 minutes
@@ -24,6 +24,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
   const [timeLeft, setTimeLeft] = useState(TOTAL_TIME_MS);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<Message[]>([]);
+  const startTimeRef = useRef<number | null>(null);
 
   // Initialize with a greeting from agent if applicable
   useEffect(() => {
@@ -64,6 +66,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     return () => { isMounted = false; };
   }, [agentType]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+  }, []);
+
   // Listener for Real Student socket messages
   useEffect(() => {
     if (agentType === AgentType.REAL_STUDENT) {
@@ -78,19 +88,58 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  const buildStats = useCallback((endTime: number): ChatStats => {
+    const messagesSnapshot = messagesRef.current;
+    const startTime = startTimeRef.current || endTime;
+
+    let turnsUser = 0;
+    let turnsAgent = 0;
+    let wordsUser = 0;
+    let wordsAgent = 0;
+
+    const countWords = (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return 0;
+      return trimmed.split(/\s+/).length;
+    };
+
+    for (const msg of messagesSnapshot) {
+      if (msg.sender === 'user') {
+        turnsUser += 1;
+        wordsUser += countWords(msg.text);
+      } else {
+        turnsAgent += 1;
+        wordsAgent += countWords(msg.text);
+      }
+    }
+
+    const durationSeconds = Math.max(0, Math.round((endTime - startTime) / 1000));
+
+    return {
+      turnsUser,
+      turnsAgent,
+      turnsTotal: turnsUser + turnsAgent,
+      wordsUser,
+      wordsAgent,
+      wordsTotal: wordsUser + wordsAgent,
+      durationSeconds,
+    };
+  }, []);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1000) {
           clearInterval(timer);
-          onFinished();
+          const stats = buildStats(Date.now());
+          onFinished(stats);
           return 0;
         }
         return prev - 1000;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [onFinished]);
+  }, [buildStats, onFinished]);
 
   // Focus input on mount
   useEffect(() => {
