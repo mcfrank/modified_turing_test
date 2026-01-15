@@ -4,6 +4,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { Server } = require("socket.io");
 const { google } = require('googleapis');
+const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 const server = http.createServer(app);
@@ -31,6 +32,8 @@ const sessions = new Map();
 
 const SHEETS_ID = process.env.GOOGLE_SHEETS_ID || '';
 const SHEETS_RANGE = process.env.GOOGLE_SHEETS_RANGE || 'Sheet1!A1';
+const SHEETS_ID_MASKED = SHEETS_ID ? `${SHEETS_ID.slice(0, 4)}...${SHEETS_ID.slice(-4)}` : '(missing)';
+console.log(`[sheets] id=${SHEETS_ID_MASKED} range=${SHEETS_RANGE}`);
 
 const getServiceAccount = () => {
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -41,6 +44,37 @@ const getServiceAccount = () => {
     return JSON.parse(decoded);
   }
   return null;
+};
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+const generateGeminiResponse = async (systemInstruction, history, lastMessage) => {
+  if (!geminiClient) {
+    throw new Error('GEMINI_API_KEY missing');
+  }
+
+  const conversationHistory = history
+    .map((m) => `${m.sender === 'user' ? 'User' : 'Model'}: ${m.text}`)
+    .join('\n');
+
+  const fullPrompt = `
+${conversationHistory}
+User: ${lastMessage}
+Model:
+`;
+
+  const response = await geminiClient.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: fullPrompt,
+    config: {
+      systemInstruction,
+      temperature: 0.7,
+      maxOutputTokens: 150,
+    },
+  });
+
+  return response.text || '...';
 };
 
 const getSheetsClient = () => {
@@ -110,6 +144,20 @@ app.post('/api/session/start', (req, res) => {
   return res.json({ sessionId, agentType });
 });
 
+app.post('/api/gemini', async (req, res) => {
+  try {
+    const { systemInstruction, history = [], lastMessage = '' } = req.body || {};
+    if (!systemInstruction || !lastMessage) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    const responseText = await generateGeminiResponse(systemInstruction, history, lastMessage);
+    return res.json({ text: responseText });
+  } catch (error) {
+    console.error('Gemini API error:', error?.message || error);
+    return res.status(500).json({ error: 'gemini_failed' });
+  }
+});
+
 app.post('/api/evaluation', async (req, res) => {
   try {
     const {
@@ -156,33 +204,32 @@ app.post('/api/evaluation', async (req, res) => {
 
     return res.json({ ok: true, logged: !result.skipped, reason: result.reason || null });
   } catch (error) {
-    console.error('Evaluation logging error:', error);
+    const status = error?.response?.status;
+    const data = error?.response?.data;
+    console.error('Evaluation logging error:', error?.message || error);
+    if (status || data) {
+      console.error('Sheets API response:', { status, data });
+    }
     return res.status(500).json({ error: 'logging_failed' });
   }
 });
 
 // 3. Socket.io Logic
-const waitingQueues = new Map();
-const socketQueueMembership = new Map();
-
-const getQueue = (condition) => {
-  if (!waitingQueues.has(condition)) {
-    waitingQueues.set(condition, []);
-  }
-  return waitingQueues.get(condition);
-};
+const waitingQueue = [];
+const queueTimeouts = new Map();
+const socketRoomMembership = new Map();
 
 io.on('connection', (socket) => {
   console.log('a user connected', socket.id);
 
   socket.on('join_queue', (payload = {}) => {
-    const { condition } = payload;
-    if (!condition) return;
-
-    const queue = getQueue(condition);
-    if (queue.length > 0) {
-      const partnerId = queue.shift();
+    if (waitingQueue.length > 0) {
+      const partnerId = waitingQueue.shift();
       if (partnerId) {
+        const partnerTimeout = queueTimeouts.get(partnerId);
+        if (partnerTimeout) clearTimeout(partnerTimeout);
+        queueTimeouts.delete(partnerId);
+
         const roomId = crypto.randomUUID();
         socket.join(roomId);
         const partnerSocket = io.sockets.sockets.get(partnerId);
@@ -190,13 +237,21 @@ io.on('connection', (socket) => {
           partnerSocket.join(roomId);
           partnerSocket.emit('match_found', { roomId });
           socket.emit('match_found', { roomId });
-          socketQueueMembership.delete(partnerId);
-          socketQueueMembership.delete(socket.id);
+          socketRoomMembership.set(partnerId, roomId);
+          socketRoomMembership.set(socket.id, roomId);
         }
       }
     } else {
-      queue.push(socket.id);
-      socketQueueMembership.set(socket.id, condition);
+      waitingQueue.push(socket.id);
+      const timeoutId = setTimeout(() => {
+        const idx = waitingQueue.indexOf(socket.id);
+        if (idx >= 0) {
+          waitingQueue.splice(idx, 1);
+        }
+        queueTimeouts.delete(socket.id);
+        socket.emit('match_not_found');
+      }, 30000);
+      queueTimeouts.set(socket.id, timeoutId);
     }
   });
 
@@ -209,14 +264,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    const condition = socketQueueMembership.get(socket.id);
-    if (condition) {
-      const queue = getQueue(condition);
-      const idx = queue.indexOf(socket.id);
-      if (idx >= 0) {
-        queue.splice(idx, 1);
-      }
-      socketQueueMembership.delete(socket.id);
+    const idx = waitingQueue.indexOf(socket.id);
+    if (idx >= 0) {
+      waitingQueue.splice(idx, 1);
+    }
+    const timeoutId = queueTimeouts.get(socket.id);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      queueTimeouts.delete(socket.id);
+    }
+
+    const roomId = socketRoomMembership.get(socket.id);
+    if (roomId) {
+      socket.to(roomId).emit('partner_disconnected');
+      socketRoomMembership.delete(socket.id);
     }
   });
 });

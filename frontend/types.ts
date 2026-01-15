@@ -19,7 +19,7 @@ export enum AgentType {
 
 export interface Message {
   id: string;
-  sender: 'user' | 'agent';
+  sender: 'user' | 'agent' | 'system';
   text: string;
   timestamp: number;
 }

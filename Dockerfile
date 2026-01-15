@@ -1,6 +1,9 @@
 # --- Stage 1: Build the React Frontend ---
 FROM node:20-alpine as frontend-build
 WORKDIR /app/frontend
+# Allow build-time debug flag for the frontend
+ARG VITE_DEBUG_MODE
+ENV VITE_DEBUG_MODE=$VITE_DEBUG_MODE
 # Copy frontend package files
 COPY frontend/package*.json ./
 RUN npm install

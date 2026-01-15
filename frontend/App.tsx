@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [chatStats, setChatStats] = useState<ChatStats | null>(null);
   const [loggingMessage, setLoggingMessage] = useState<string | null>(null);
+  const [waitingMessage, setWaitingMessage] = useState<string | null>(null);
 
   // Function to determine agent assignment logic
   const assignAgent = (condition: Condition): AgentType => {
@@ -30,17 +31,21 @@ const App: React.FC = () => {
     return Object.values(AgentType).includes(value as AgentType);
   };
 
-  const handleSelectCondition = async (condition: Condition) => {
+  const handleSelectCondition = async (condition: Condition, forcedAgentType?: AgentType) => {
     setSelectedCondition(condition);
     setCurrentScreen(AppScreen.WAITING);
     setChatStats(null);
     setSessionId(null);
     setLoggingMessage(null);
+    setWaitingMessage(null);
     
-    let agent = assignAgent(condition);
+    let agent = forcedAgentType || assignAgent(condition);
     let newSessionId: string | null = null;
 
     try {
+      if (forcedAgentType) {
+        throw new Error('debug_forced_agent');
+      }
       const response = await fetch('/api/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,10 +70,20 @@ const App: React.FC = () => {
     if (agent === AgentType.REAL_STUDENT) {
       // Connect to socket and wait for real match
       socketService.connect();
-      socketService.joinQueue(condition, () => {
-        // Match found!
-        setCurrentScreen(AppScreen.CHAT);
-      });
+      socketService.joinQueue(
+        () => {
+          // Match found!
+          setCurrentScreen(AppScreen.CHAT);
+        },
+        () => {
+          setWaitingMessage("Sorry, no partner found.");
+          setTimeout(() => {
+            setSelectedCondition(null);
+            setAssignedAgent(null);
+            setCurrentScreen(AppScreen.INTRO);
+          }, 3000);
+        }
+      );
     } else {
       // Simulate matching delay for bots
       const delay = 2000 + Math.random() * 2000;
@@ -149,7 +164,7 @@ const App: React.FC = () => {
         <IntroScreen onSelectCondition={handleSelectCondition} />
       )}
       {currentScreen === AppScreen.WAITING && (
-        <WaitingScreen />
+        <WaitingScreen message={waitingMessage} />
       )}
       {currentScreen === AppScreen.CHAT && selectedCondition && assignedAgent && (
         <ChatScreen 

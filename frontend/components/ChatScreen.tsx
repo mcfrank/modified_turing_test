@@ -26,6 +26,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<Message[]>([]);
   const startTimeRef = useRef<number | null>(null);
+  const finishedRef = useRef(false);
 
   // Initialize with a greeting from agent if applicable
   useEffect(() => {
@@ -74,20 +75,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     startTimeRef.current = Date.now();
   }, []);
 
-  // Listener for Real Student socket messages
-  useEffect(() => {
-    if (agentType === AgentType.REAL_STUDENT) {
-      socketService.onReceiveMessage((msg) => {
-        setMessages(prev => [...prev, msg]);
-      });
-    }
-  }, [agentType]);
-
-  // Scroll to bottom on new message
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
-
   const buildStats = useCallback((endTime: number): ChatStats => {
     const messagesSnapshot = messagesRef.current;
     const startTime = startTimeRef.current || endTime;
@@ -126,11 +113,44 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     };
   }, []);
 
+  // Listener for Real Student socket messages
+  useEffect(() => {
+    if (agentType === AgentType.REAL_STUDENT) {
+      socketService.onReceiveMessage((msg) => {
+        setMessages(prev => [...prev, msg]);
+      });
+      socketService.onPartnerDisconnected(() => {
+        if (finishedRef.current) return;
+        const systemMsg: Message = {
+          id: 'sys-' + Date.now(),
+          sender: 'system',
+          text: '[technical issue - chat partner disconnected]',
+          timestamp: Date.now(),
+        };
+        setMessages(prev => [...prev, systemMsg]);
+        finishedRef.current = true;
+        setTimeout(() => {
+          const stats = buildStats(Date.now());
+          onFinished(stats);
+        }, 5000);
+      });
+    }
+  }, [agentType, buildStats, onFinished]);
+
+  // Scroll to bottom on new message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isTyping]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1000) {
           clearInterval(timer);
+          if (finishedRef.current) {
+            return 0;
+          }
+          finishedRef.current = true;
           const stats = buildStats(Date.now());
           onFinished(stats);
           return 0;
@@ -145,6 +165,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const finishChatEarly = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    const stats = buildStats(Date.now());
+    onFinished(stats);
+  };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -236,7 +263,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
               className={`max-w-[80%] px-4 py-2 rounded-2xl break-words text-sm md:text-base shadow-sm ${
                 msg.sender === 'user'
                   ? 'bg-blue-600 text-white rounded-br-none'
-                  : 'bg-gray-700 text-gray-200 rounded-bl-none'
+                  : msg.sender === 'system'
+                    ? 'bg-red-900/60 text-red-200 border border-red-700'
+                    : 'bg-gray-700 text-gray-200 rounded-bl-none'
               }`}
             >
               {msg.text}
@@ -275,6 +304,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z" />
             </svg>
+          </button>
+          <button
+            type="button"
+            onClick={finishChatEarly}
+            className="bg-gray-700 hover:bg-gray-600 text-gray-100 rounded-full px-4 py-2 text-sm font-semibold border border-gray-600 transition-colors"
+          >
+            End Chat
           </button>
         </div>
       </form>

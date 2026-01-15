@@ -1,5 +1,5 @@
 import { io, Socket } from "socket.io-client";
-import { Condition, Message } from "../types";
+import { Message } from "../types";
 
 // REPLACE THIS WITH YOUR DEPLOYED CLOUD RUN URL OR LOCALHOST
 const SOCKET_URL = "http://localhost:8080"; 
@@ -21,15 +21,23 @@ class SocketService {
     });
   }
 
-  joinQueue(condition: Condition, onMatchFound: () => void) {
+  joinQueue(onMatchFound: () => void, onTimeout?: () => void) {
     if (!this.socket) this.connect();
 
-    this.socket?.emit("join_queue", { condition });
+    this.socket?.emit("join_queue");
     
     this.socket?.on("match_found", (data: { roomId: string }) => {
       this.roomId = data.roomId;
       onMatchFound();
     });
+
+    this.socket?.off("match_not_found");
+    if (onTimeout) {
+      this.socket?.on("match_not_found", () => {
+        this.roomId = null;
+        onTimeout();
+      });
+    }
   }
 
   sendMessage(text: string) {
@@ -52,6 +60,14 @@ class SocketService {
         timestamp: data.timestamp
       };
       callback(msg);
+    });
+  }
+
+  onPartnerDisconnected(callback: () => void) {
+    if (!this.socket) return;
+    this.socket.off("partner_disconnected");
+    this.socket.on("partner_disconnected", () => {
+      callback();
     });
   }
 
