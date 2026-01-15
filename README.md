@@ -1,20 +1,21 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SymSys Modified Turing Test
 
-# Run and deploy your AI Studio app
+## Overview
 
-This contains everything you need to run your app locally.
+This is a modified Turing Test experiment for the SymSys 1 course. It is a web application that allows students to chat with and evaluate various agents including Eliza, Gemini, and simulated peers.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1yft-zCKcL97Tc2yV6g_F544OFnjDaOcz
+## Features
 
-## Run Locally
+- Chat with Eliza, Gemini, and simulated peers
+- Evaluate the interaction
+- View the results
 
-**Prerequisites:**  Node.js
-
+## Running the application
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the `GEMINI_API_KEY` in `.envrc` to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+For the google sheets logging, you need to set the appropriate sheet ID environment variables, including GOOGLE_SHEETS_ID and GOOGLE_SERVICE_ACCOUNT_BASE64.
