@@ -3,21 +3,16 @@ import { AgentType, Message, Condition, ChatStats } from '../types';
 import { sendToAgent, getInitialGreeting } from '../services/chatOrchestrator';
 import { socketService } from '../services/socketService';
 
-// --------------------------------------------------------------------------
-// DEBUG CONFIGURATION
-// Set VITE_DEBUG_MODE=true to show debug controls in the header.
-const DEBUG = import.meta.env.VITE_DEBUG_MODE === 'true';
-// --------------------------------------------------------------------------
-
 interface ChatScreenProps {
   condition: Condition;
   agentType: AgentType;
   onFinished: (stats: ChatStats) => void;
+  debugMode: boolean;
 }
 
 const TOTAL_TIME_MS = 3 * 60 * 1000; // 3 minutes
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, onFinished }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, onFinished, debugMode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -234,7 +229,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
           <span className="text-sm font-medium text-blue-300">{condition}</span>
         </div>
         
-        {DEBUG && (
+        {debugMode && (
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none flex items-center justify-center">
             <div className="bg-red-900/90 text-red-100 px-3 py-1 rounded-md text-xs font-mono border border-red-500 shadow-lg">
               DEBUG: {agentType}

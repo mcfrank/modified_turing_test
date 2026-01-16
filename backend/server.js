@@ -34,6 +34,7 @@ const SHEETS_ID = process.env.GOOGLE_SHEETS_ID || '';
 const SHEETS_RANGE = process.env.GOOGLE_SHEETS_RANGE || 'Sheet1!A1';
 const SHEETS_ID_MASKED = SHEETS_ID ? `${SHEETS_ID.slice(0, 4)}...${SHEETS_ID.slice(-4)}` : '(missing)';
 console.log(`[sheets] id=${SHEETS_ID_MASKED} range=${SHEETS_RANGE}`);
+const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 
 const getServiceAccount = () => {
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -121,6 +122,10 @@ const pickAgentForCondition = (condition) => {
 // 2. API Routes
 app.get('/api/hello', (req, res) => {
   res.json({ message: "Hello from Node Backend" });
+});
+
+app.get('/api/config', (req, res) => {
+  res.json({ debugMode: DEBUG_MODE });
 });
 
 app.post('/api/session/start', (req, res) => {

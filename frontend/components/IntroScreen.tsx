@@ -3,18 +3,13 @@ import { Condition, AgentType } from '../types';
 
 interface IntroScreenProps {
   onSelectCondition: (condition: Condition, forcedAgentType?: AgentType) => void;
+  debugMode: boolean;
 }
 
-// --------------------------------------------------------------------------
-// DEBUG CONFIGURATION
-// Set VITE_DEBUG_MODE=true to show debug controls for forcing agent selection.
-const DEBUG = import.meta.env.VITE_DEBUG_MODE === 'true';
-// --------------------------------------------------------------------------
-
-export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition }) => {
+export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, debugMode }) => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-6 text-center">
-      {DEBUG && (
+      {debugMode && (
         <div className="mb-6 px-3 py-1 rounded-md bg-red-900/80 text-red-200 text-xs font-mono border border-red-500">
           DEBUG MODE
         </div>
@@ -28,7 +23,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition }) =
         and then evaluate the interaction.
       </p>
 
-      {!DEBUG && (
+      {!debugMode && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
           <button
             onClick={() => onSelectCondition(Condition.ELIZA_VS_GEMINI)}
@@ -62,7 +57,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition }) =
         </div>
       )}
 
-      {DEBUG && (
+      {debugMode && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
           <button
             onClick={() => onSelectCondition(Condition.ELIZA_VS_GEMINI, AgentType.ELIZA_CLASSIC)}

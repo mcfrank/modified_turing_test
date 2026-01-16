@@ -14,6 +14,25 @@ const App: React.FC = () => {
   const [chatStats, setChatStats] = useState<ChatStats | null>(null);
   const [loggingMessage, setLoggingMessage] = useState<string | null>(null);
   const [waitingMessage, setWaitingMessage] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadConfig = async () => {
+      try {
+        const response = await fetch('/api/config');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (isMounted && typeof data?.debugMode === 'boolean') {
+          setDebugMode(data.debugMode);
+        }
+      } catch (error) {
+        console.warn('Failed to load config', error);
+      }
+    };
+    loadConfig();
+    return () => { isMounted = false; };
+  }, []);
 
   // Function to determine agent assignment logic
   const assignAgent = (condition: Condition): AgentType => {
@@ -161,7 +180,7 @@ const App: React.FC = () => {
   return (
     <div className="antialiased text-gray-100">
       {currentScreen === AppScreen.INTRO && (
-        <IntroScreen onSelectCondition={handleSelectCondition} />
+        <IntroScreen onSelectCondition={handleSelectCondition} debugMode={debugMode} />
       )}
       {currentScreen === AppScreen.WAITING && (
         <WaitingScreen message={waitingMessage} />
@@ -171,6 +190,7 @@ const App: React.FC = () => {
           condition={selectedCondition} 
           agentType={assignedAgent} 
           onFinished={handleChatFinished} 
+          debugMode={debugMode}
         />
       )}
       {currentScreen === AppScreen.EVALUATION && selectedCondition && (
