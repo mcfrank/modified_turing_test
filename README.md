@@ -40,5 +40,6 @@ These steps rebuild the Docker image and redeploy to Cloud Run.
    `direnv exec . node backend/server.js`
 4. Start the frontend (in another terminal):
    `cd frontend && npm run dev`
+5. For debugging, you can set `DEBUG_MODE=true` in `.envrc` to enable debug mode.
 
 The frontend dev server proxies `/api` and `/socket.io` to the backend at `http://localhost:8080` via the Vite config.
