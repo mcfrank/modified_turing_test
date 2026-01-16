@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppScreen, Condition, AgentType, ChatStats } from './types';
 import { IntroScreen } from './components/IntroScreen';
 import { WaitingScreen } from './components/WaitingScreen';
