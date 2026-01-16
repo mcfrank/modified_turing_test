@@ -1,7 +1,7 @@
 import { AgentType, Message } from "../types";
 import { generateGeminiResponse } from "./geminiService";
 import { ElizaBot } from "./elizaService";
-import { GEMINI_ELIZA_PROMPT, GEMINI_STUDENT_PROMPT, MOCK_HUMAN_PROMPT } from "./prompts";
+import { GEMINI_ELIZA_PROMPT, GEMINI_STUDENT_PROMPT, GEMINI_STUDENT_GREETING_SYSTEM, MOCK_HUMAN_PROMPT } from "./prompts";
 import { socketService } from "./socketService";
 
 const elizaInstance = new ElizaBot();
@@ -38,7 +38,7 @@ export const getInitialGreeting = async (agentType: AgentType): Promise<string |
       return generateGeminiResponse(
         GEMINI_STUDENT_PROMPT,
         [],
-        "(System: The user has connected. You are starting the conversation. Say something casual to the other student to start the chat, like 'hey' or 'hi'.)"
+        GEMINI_STUDENT_GREETING_SYSTEM.trim()
       );
 
     default:

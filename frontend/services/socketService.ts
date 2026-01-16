@@ -1,8 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { Message } from "../types";
 
-// REPLACE THIS WITH YOUR DEPLOYED CLOUD RUN URL OR LOCALHOST
-const SOCKET_URL = "http://localhost:8080"; 
+const SOCKET_URL = window.location.origin;
 
 class SocketService {
   private socket: Socket | null = null;
