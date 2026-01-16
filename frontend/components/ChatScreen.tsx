@@ -5,8 +5,8 @@ import { socketService } from '../services/socketService';
 
 // --------------------------------------------------------------------------
 // DEBUG CONFIGURATION
-// Set this to true to see which agent you are paired with in the header.
-const DEBUG = true; 
+// Set VITE_DEBUG_MODE=true to show debug controls in the header.
+const DEBUG = import.meta.env.VITE_DEBUG_MODE === 'true';
 // --------------------------------------------------------------------------
 
 interface ChatScreenProps {
