@@ -92,26 +92,6 @@ Model:
   let text = response.text || '...';
   console.log('[gemini] response:', text);
 
-  if (countWords(text) < 8) {
-    const retryInstruction = `${systemInstruction}\nIMPORTANT: Your response was too short. Reply with 1–2 complete sentences, at least 8 words, and end with punctuation.`;
-    const retry = await geminiClient.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: fullPrompt,
-      config: {
-        systemInstruction: retryInstruction,
-        temperature: Number.isNaN(GEMINI_TEMPERATURE) ? 1.0 : GEMINI_TEMPERATURE,
-        topP: Number.isNaN(GEMINI_TOP_P) ? 0.95 : GEMINI_TOP_P,
-        topK: Number.isNaN(GEMINI_TOP_K) ? 40 : GEMINI_TOP_K,
-        seed: GEMINI_SEED,
-        thinkingLevel: 'medium',
-        thinkingBudget: 0,
-      },
-    });
-    const retryText = retry.text || text;
-    console.log('[gemini] retry response:', retryText);
-    text = retryText;
-  }
-
   return text;
 };
 
