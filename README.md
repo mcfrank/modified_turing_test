@@ -14,16 +14,21 @@ This is a modified Turing Test experiment for the SymSys 1 course. It is a web a
 
 These steps rebuild the Docker image and redeploy to Cloud Run.
 
+You need the gcloud-cli installed and authenticated, as well as a Gemini API key and a Google Service Account JSON file.
+
 1. Authenticate and set project:
    `gcloud auth login`
    `gcloud config set project gen-lang-client-0788134412`
 
-2. Build and push the image to Artifact Registry (us-west2):
+2. Set up the Docker repository:
    `gcloud auth configure-docker us-west2-docker.pkg.dev`
-   `gcloud builds submit --tag us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest .`
 
-3. Deploy to Cloud Run:
-   `gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest --platform managed --region us-west2 --allow-unauthenticated --port 8080`
+3. Build the image and deploy to Cloud Run:
+
+```
+gcloud builds submit --tag us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest .`
+gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest --platform managed --region us-west2 --allow-unauthenticated --port 8080
+```
 
 ## Running the application locally
 
