@@ -8,6 +8,7 @@ export enum AppScreen {
 export enum Condition {
   ELIZA_VS_GEMINI = 'Eliza vs. Gemini',
   GEMINI_VS_STANFORD = 'Gemini vs. Stanford',
+  BASE_VS_POSTTRAINED = 'Base vs. Post-trained',
 }
 
 export enum AgentType {
@@ -15,6 +16,8 @@ export enum AgentType {
   GEMINI_ELIZA = 'GEMINI_ELIZA',
   GEMINI_STUDENT = 'GEMINI_STUDENT',
   REAL_STUDENT = 'REAL_STUDENT', // In this demo, this will be simulated
+  OLLAMA_BASE = 'OLLAMA_BASE',
+  OLLAMA_POSTTRAINED = 'OLLAMA_POSTTRAINED',
 }
 
 export interface Message {

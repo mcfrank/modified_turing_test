@@ -13,6 +13,9 @@ export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, o
   const getQuestion = () => {
     if (condition === Condition.ELIZA_VS_GEMINI) {
       return "How much did you feel like you were talking to a 'classic' mechanical program versus a modern intelligent agent?";
+    }
+    if (condition === Condition.BASE_VS_POSTTRAINED) {
+      return "To what extent did you believe you were interacting with a base model versus a post-trained model?";
     } else {
       return "To what extent did you believe you were interacting with a real human student?";
     }
@@ -21,6 +24,9 @@ export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, o
   const getLabels = () => {
     if (condition === Condition.ELIZA_VS_GEMINI) {
         return ["Definitely Classic Eliza", "Definitely Modern AI"];
+    }
+    if (condition === Condition.BASE_VS_POSTTRAINED) {
+        return ["Definitely Base", "Definitely Post-trained"];
     } else {
         return ["Definitely AI", "Definitely Human"];
     }

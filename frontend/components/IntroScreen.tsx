@@ -24,7 +24,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
       </p>
 
       {!debugMode && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
           <button
             onClick={() => onSelectCondition(Condition.ELIZA_VS_GEMINI)}
             className="group relative flex flex-col items-center p-8 bg-gray-800 border-2 border-gray-700 rounded-xl hover:border-blue-500 hover:bg-gray-750 transition-all duration-300"
@@ -54,11 +54,25 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
               You will be paired with either a Gemini AI posing as a student or a real Stanford student.
             </p>
           </button>
+          <button
+            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED)}
+            className="group relative flex flex-col items-center p-8 bg-gray-800 border-2 border-gray-700 rounded-xl hover:border-purple-500 hover:bg-gray-750 transition-all duration-300"
+          >
+            <div className="h-12 w-12 mb-4 text-purple-400">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h7.5m-7.5 6h7.5m-7.5 6h7.5M6 6h.008M6 12h.008M6 18h.008" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-white mb-2">Condition 3: Base vs. Post-trained</h2>
+            <p className="text-gray-400 text-sm">
+              You will be paired with either a base model or a post-trained model.
+            </p>
+          </button>
         </div>
       )}
 
       {debugMode && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl">
           <button
             onClick={() => onSelectCondition(Condition.ELIZA_VS_GEMINI, AgentType.ELIZA_CLASSIC)}
             className="group relative flex flex-col items-center p-6 bg-gray-800 border-2 border-red-700 rounded-xl hover:border-red-500 hover:bg-gray-750 transition-all duration-300"
@@ -93,6 +107,24 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
             <h2 className="text-lg font-semibold text-white mb-2">Debug: Force Real Student</h2>
             <p className="text-gray-400 text-sm">
               Condition: Gemini vs. Stanford (forced human)
+            </p>
+          </button>
+          <button
+            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.OLLAMA_BASE)}
+            className="group relative flex flex-col items-center p-6 bg-gray-800 border-2 border-red-700 rounded-xl hover:border-red-500 hover:bg-gray-750 transition-all duration-300"
+          >
+            <h2 className="text-lg font-semibold text-white mb-2">Debug: Force Base Model</h2>
+            <p className="text-gray-400 text-sm">
+              Condition: Base vs. Post-trained (forced base)
+            </p>
+          </button>
+          <button
+            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.OLLAMA_POSTTRAINED)}
+            className="group relative flex flex-col items-center p-6 bg-gray-800 border-2 border-red-700 rounded-xl hover:border-red-500 hover:bg-gray-750 transition-all duration-300"
+          >
+            <h2 className="text-lg font-semibold text-white mb-2">Debug: Force Post-trained</h2>
+            <p className="text-gray-400 text-sm">
+              Condition: Base vs. Post-trained (forced post-trained)
             </p>
           </button>
         </div>

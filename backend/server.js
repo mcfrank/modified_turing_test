@@ -19,6 +19,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const CONDITIONS = {
   ELIZA_VS_GEMINI: 'Eliza vs. Gemini',
   GEMINI_VS_STANFORD: 'Gemini vs. Stanford',
+  BASE_VS_POSTTRAINED: 'Base vs. Post-trained',
 };
 
 const AGENTS = {
@@ -26,6 +27,8 @@ const AGENTS = {
   GEMINI_ELIZA: 'GEMINI_ELIZA',
   GEMINI_STUDENT: 'GEMINI_STUDENT',
   REAL_STUDENT: 'REAL_STUDENT',
+  OLLAMA_BASE: 'OLLAMA_BASE',
+  OLLAMA_POSTTRAINED: 'OLLAMA_POSTTRAINED',
 };
 
 const sessions = new Map();
@@ -53,6 +56,11 @@ const GEMINI_TOP_P = Number.parseFloat(process.env.GEMINI_TOP_P || '0.95');
 const GEMINI_TOP_K = Number.parseInt(process.env.GEMINI_TOP_K || '40', 10);
 const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI_SEED, 10) : undefined;
 const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || '').replace(/\/$/, '');
+const OLLAMA_BASE_MODEL = process.env.OLLAMA_BASE_MODEL || 'llama3:text';
+const OLLAMA_POSTTRAINED_MODEL = process.env.OLLAMA_POSTTRAINED_MODEL || 'llama3';
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
 
 const generateGeminiResponse = async (systemInstruction, history, lastMessage) => {
   if (!geminiClient) {
@@ -95,6 +103,46 @@ Model:
   return text;
 };
 
+const generateOllamaResponse = async (model, systemInstruction, history, lastMessage) => {
+  if (!OLLAMA_BASE_URL) {
+    throw new Error('OLLAMA_BASE_URL missing');
+  }
+
+  const conversationHistory = history
+    .map((m) => `${m.sender === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+    .join('\n');
+
+  const prompt = `
+${conversationHistory}
+User: ${lastMessage}
+Assistant:
+`;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (OLLAMA_API_KEY) {
+    headers.Authorization = `Bearer ${OLLAMA_API_KEY}`;
+  }
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      prompt,
+      system: systemInstruction,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Ollama error: ${response.status} ${errText}`);
+  }
+
+  const data = await response.json();
+  return data?.response || '...';
+};
+
 const getSheetsClient = () => {
   const serviceAccount = getServiceAccount();
   if (!serviceAccount) return null;
@@ -132,6 +180,9 @@ const pickAgentForCondition = (condition) => {
   }
   if (condition === CONDITIONS.GEMINI_VS_STANFORD) {
     return random < 0.5 ? AGENTS.GEMINI_STUDENT : AGENTS.REAL_STUDENT;
+  }
+  if (condition === CONDITIONS.BASE_VS_POSTTRAINED) {
+    return random < 0.5 ? AGENTS.OLLAMA_BASE : AGENTS.OLLAMA_POSTTRAINED;
   }
   return null;
 };
@@ -177,6 +228,21 @@ app.post('/api/gemini', async (req, res) => {
   } catch (error) {
     console.error('Gemini API error:', error?.message || error);
     return res.status(500).json({ error: 'gemini_failed' });
+  }
+});
+
+app.post('/api/ollama', async (req, res) => {
+  try {
+    const { agentType, systemInstruction = '', history = [], lastMessage = '' } = req.body || {};
+    if (!agentType || !lastMessage) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    const model = agentType === AGENTS.OLLAMA_POSTTRAINED ? OLLAMA_POSTTRAINED_MODEL : OLLAMA_BASE_MODEL;
+    const responseText = await generateOllamaResponse(model, systemInstruction, history, lastMessage);
+    return res.json({ text: responseText });
+  } catch (error) {
+    console.error('Ollama API error:', error?.message || error);
+    return res.status(500).json({ error: 'ollama_failed' });
   }
 });
 

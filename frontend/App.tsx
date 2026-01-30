@@ -40,10 +40,13 @@ const App: React.FC = () => {
     if (condition === Condition.ELIZA_VS_GEMINI) {
       // 50/50 split
       return random < 0.5 ? AgentType.ELIZA_CLASSIC : AgentType.GEMINI_ELIZA;
-    } else {
+    }
+    if (condition === Condition.GEMINI_VS_STANFORD) {
       // 50/50 split
       return random < 0.5 ? AgentType.GEMINI_STUDENT : AgentType.REAL_STUDENT;
     }
+    // BASE_VS_POSTTRAINED
+    return random < 0.5 ? AgentType.OLLAMA_BASE : AgentType.OLLAMA_POSTTRAINED;
   };
 
   const isValidAgentType = (value: string): value is AgentType => {

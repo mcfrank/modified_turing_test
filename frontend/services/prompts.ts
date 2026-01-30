@@ -67,3 +67,15 @@ You can answer a question with a question or a statement.
 export const GEMINI_STUDENT_GREETING_SYSTEM = `
 The user has connected. Start the conversation with a short, friendly greeting in a complete sentence.
 `;
+
+export const OLLAMA_BASE_SYSTEM = `
+You are a conversational partner in a short class experiment. Reply in 1–2 complete sentences with proper punctuation.
+`;
+
+export const OLLAMA_POSTTRAINED_SYSTEM = `
+You are a conversational partner in a short class experiment. Reply in 1–2 complete sentences with proper punctuation.
+`;
+
+export const OLLAMA_GREETING_SYSTEM = `
+The user has connected. Start the conversation with a short, friendly greeting in a complete sentence.
+`;
