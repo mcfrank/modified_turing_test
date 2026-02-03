@@ -1,8 +1,8 @@
 import { AgentType, Message } from "../types";
 import { generateGeminiResponse } from "./geminiService";
-import { generateOllamaResponse } from "./ollamaService";
+import { generateHfResponse } from "./hfService";
 import { ElizaBot } from "./elizaService";
-import { GEMINI_ELIZA_PROMPT, GEMINI_STUDENT_PROMPT, GEMINI_STUDENT_GREETING_SYSTEM, MOCK_HUMAN_PROMPT, OLLAMA_BASE_SYSTEM, OLLAMA_POSTTRAINED_SYSTEM, OLLAMA_GREETING_SYSTEM } from "./prompts";
+import { GEMINI_ELIZA_PROMPT, GEMINI_STUDENT_PROMPT, GEMINI_STUDENT_GREETING_SYSTEM, OLLAMA_BASE_SYSTEM, OLLAMA_POSTTRAINED_SYSTEM, OLLAMA_GREETING_SYSTEM } from "./prompts";
 import { socketService } from "./socketService";
 
 const elizaInstance = new ElizaBot();
@@ -42,18 +42,18 @@ export const getInitialGreeting = async (agentType: AgentType): Promise<string |
         GEMINI_STUDENT_GREETING_SYSTEM.trim()
       );
     case AgentType.OLLAMA_BASE:
-      return generateOllamaResponse(
+      return generateHfResponse(
         AgentType.OLLAMA_BASE,
         OLLAMA_BASE_SYSTEM.trim() + "\n" + OLLAMA_GREETING_SYSTEM.trim(),
         [],
-        ""
+        "The user has connected."
       );
     case AgentType.OLLAMA_POSTTRAINED:
-      return generateOllamaResponse(
+      return generateHfResponse(
         AgentType.OLLAMA_POSTTRAINED,
         OLLAMA_POSTTRAINED_SYSTEM.trim() + "\n" + OLLAMA_GREETING_SYSTEM.trim(),
         [],
-        ""
+        "The user has connected."
       );
 
     default:
@@ -88,11 +88,11 @@ export const sendToAgent = async (
 
     case AgentType.OLLAMA_BASE:
       await sleep(1500 + Math.random() * 1500);
-      return generateOllamaResponse(AgentType.OLLAMA_BASE, OLLAMA_BASE_SYSTEM.trim(), history, messageText);
+      return generateHfResponse(AgentType.OLLAMA_BASE, OLLAMA_BASE_SYSTEM.trim(), history, messageText);
 
     case AgentType.OLLAMA_POSTTRAINED:
       await sleep(1500 + Math.random() * 1500);
-      return generateOllamaResponse(AgentType.OLLAMA_POSTTRAINED, OLLAMA_POSTTRAINED_SYSTEM.trim(), history, messageText);
+      return generateHfResponse(AgentType.OLLAMA_POSTTRAINED, OLLAMA_POSTTRAINED_SYSTEM.trim(), history, messageText);
 
     case AgentType.REAL_STUDENT:
       // For real students, we don't return a synchronous response.
