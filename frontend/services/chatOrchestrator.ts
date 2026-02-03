@@ -46,14 +46,14 @@ export const getInitialGreeting = async (agentType: AgentType): Promise<string |
         AgentType.OLLAMA_BASE,
         OLLAMA_BASE_SYSTEM.trim() + "\n" + OLLAMA_GREETING_SYSTEM.trim(),
         [],
-        "The user has connected."
+        ""
       );
     case AgentType.OLLAMA_POSTTRAINED:
       return generateOllamaResponse(
         AgentType.OLLAMA_POSTTRAINED,
         OLLAMA_POSTTRAINED_SYSTEM.trim() + "\n" + OLLAMA_GREETING_SYSTEM.trim(),
         [],
-        "The user has connected."
+        ""
       );
 
     default:

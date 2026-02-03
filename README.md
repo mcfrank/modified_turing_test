@@ -26,7 +26,7 @@ You need the gcloud-cli installed and authenticated, as well as a Gemini API key
 3. Build the image and deploy to Cloud Run:
 
 ```
-gcloud builds submit --tag us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest .`
+gcloud builds submit --tag us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest .
 gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest --platform managed --region us-west2 --allow-unauthenticated --port 8080
 ```
 
@@ -40,6 +40,10 @@ gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-078813
    - `GOOGLE_SHEETS_ID`
    - `GOOGLE_SHEETS_RANGE` (optional, default `Sheet1!A1`)
    - `GOOGLE_SERVICE_ACCOUNT_BASE64` (or `GOOGLE_SERVICE_ACCOUNT_JSON`)
+   - `HF_TOKEN`
+   - `HF_PROVIDER` (optional, default `featherless-ai`)
+   - `HF_BASE_MODEL` (optional, default `meta-llama/Llama-3.1-8B`)
+   - `HF_POSTTRAINED_MODEL` (optional, default `meta-llama/Llama-3.1-8B-Instruct`)
    - `VITE_DEBUG_MODE=true` (optional)
 3. Start the backend (from repo root):
    `direnv exec . node backend/server.js`

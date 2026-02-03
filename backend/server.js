@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { Server } = require("socket.io");
 const { google } = require('googleapis');
 const { GoogleGenAI } = require('@google/genai');
+const { HfInference } = require('@huggingface/inference');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,10 +58,12 @@ const GEMINI_TOP_K = Number.parseInt(process.env.GEMINI_TOP_K || '40', 10);
 const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI_SEED, 10) : undefined;
 const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
-const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || '').replace(/\/$/, '');
-const OLLAMA_BASE_MODEL = process.env.OLLAMA_BASE_MODEL || 'llama3:text';
-const OLLAMA_POSTTRAINED_MODEL = process.env.OLLAMA_POSTTRAINED_MODEL || 'llama3';
-const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
+const HF_TOKEN = process.env.HF_TOKEN || '';
+const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Llama-3.1-8B';
+const HF_POSTTRAINED_MODEL = process.env.HF_POSTTRAINED_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
+const HF_PROVIDER = process.env.HF_PROVIDER || 'featherless-ai';
+const HF_BASE_URL = process.env.HF_BASE_URL || 'https://router.huggingface.co';
+const hfClient = HF_TOKEN ? new HfInference(HF_TOKEN, { baseUrl: HF_BASE_URL }) : null;
 
 const generateGeminiResponse = async (systemInstruction, history, lastMessage) => {
   if (!geminiClient) {
@@ -103,44 +106,32 @@ Model:
   return text;
 };
 
-const generateOllamaResponse = async (model, systemInstruction, history, lastMessage) => {
-  if (!OLLAMA_BASE_URL) {
-    throw new Error('OLLAMA_BASE_URL missing');
+const buildHfPrompt = (systemInstruction, history, lastMessage) => {
+  const parts = [];
+  if (systemInstruction && systemInstruction.trim()) {
+    parts.push(`System: ${systemInstruction.trim()}`);
   }
-
-  const conversationHistory = history
-    .map((m) => `${m.sender === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
-    .join('\n');
-
-  const prompt = `
-${conversationHistory}
-User: ${lastMessage}
-Assistant:
-`;
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (OLLAMA_API_KEY) {
-    headers.Authorization = `Bearer ${OLLAMA_API_KEY}`;
+  for (const msg of history) {
+    parts.push(`${msg.sender === 'user' ? 'User' : 'Assistant'}: ${msg.text}`);
   }
+  if (lastMessage && lastMessage.trim()) {
+    parts.push(`User: ${lastMessage.trim()}`);
+  }
+  parts.push('Assistant:');
+  return parts.join('\n');
+};
 
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      prompt,
-      system: systemInstruction,
-      stream: false,
-    }),
+const generateHuggingFaceResponse = async (model, systemInstruction, history, lastMessage) => {
+  if (!hfClient) {
+    throw new Error('HF_TOKEN missing');
+  }
+  const prompt = buildHfPrompt(systemInstruction, history, lastMessage);
+  const response = await hfClient.textGeneration({
+    model,
+    inputs: prompt,
+    provider: HF_PROVIDER,
   });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Ollama error: ${response.status} ${errText}`);
-  }
-
-  const data = await response.json();
-  return data?.response || '...';
+  return response?.generated_text || '...';
 };
 
 const getSheetsClient = () => {
@@ -231,18 +222,18 @@ app.post('/api/gemini', async (req, res) => {
   }
 });
 
-app.post('/api/ollama', async (req, res) => {
+app.post('/api/hf', async (req, res) => {
   try {
     const { agentType, systemInstruction = '', history = [], lastMessage = '' } = req.body || {};
     if (!agentType || !lastMessage) {
       return res.status(400).json({ error: 'invalid_request' });
     }
-    const model = agentType === AGENTS.OLLAMA_POSTTRAINED ? OLLAMA_POSTTRAINED_MODEL : OLLAMA_BASE_MODEL;
-    const responseText = await generateOllamaResponse(model, systemInstruction, history, lastMessage);
+    const model = agentType === AGENTS.OLLAMA_POSTTRAINED ? HF_POSTTRAINED_MODEL : HF_BASE_MODEL;
+    const responseText = await generateHuggingFaceResponse(model, systemInstruction, history, lastMessage);
     return res.json({ text: responseText });
   } catch (error) {
-    console.error('Ollama API error:', error?.message || error);
-    return res.status(500).json({ error: 'ollama_failed' });
+    console.error('HuggingFace API error:', error?.message || error);
+    return res.status(500).json({ error: 'hf_failed' });
   }
 });
 

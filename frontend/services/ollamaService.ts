@@ -7,7 +7,7 @@ export const generateOllamaResponse = async (
   lastMessage: string
 ): Promise<string> => {
   try {
-    const response = await fetch("/api/ollama", {
+    const response = await fetch("/api/hf", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
