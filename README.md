@@ -41,7 +41,7 @@ gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-078813
    - `GOOGLE_SHEETS_RANGE` (optional, default `Sheet1!A1`)
    - `GOOGLE_SERVICE_ACCOUNT_BASE64` (or `GOOGLE_SERVICE_ACCOUNT_JSON`)
    - `HF_TOKEN`
-   - `HF_PROVIDER` (optional, default `featherless-ai`)
+   - `HF_PROVIDER` (required, e.g. `featherless-ai`)
    - `HF_BASE_MODEL` (optional, default `meta-llama/Llama-3.1-8B`)
    - `HF_POSTTRAINED_MODEL` (optional, default `meta-llama/Llama-3.1-8B-Instruct`)
    - `VITE_DEBUG_MODE=true` (optional)

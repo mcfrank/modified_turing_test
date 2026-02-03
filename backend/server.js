@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const { Server } = require("socket.io");
 const { google } = require('googleapis');
 const { GoogleGenAI } = require('@google/genai');
-const { HfInference } = require('@huggingface/inference');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,8 +27,8 @@ const AGENTS = {
   GEMINI_ELIZA: 'GEMINI_ELIZA',
   GEMINI_STUDENT: 'GEMINI_STUDENT',
   REAL_STUDENT: 'REAL_STUDENT',
-  OLLAMA_BASE: 'OLLAMA_BASE',
-  OLLAMA_POSTTRAINED: 'OLLAMA_POSTTRAINED',
+  LLAMA_BASE: 'LLAMA_BASE',
+  LLAMA_POSTTRAINED: 'LLAMA_POSTTRAINED',
 };
 
 const sessions = new Map();
@@ -59,11 +58,29 @@ const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI
 const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 const HF_TOKEN = process.env.HF_TOKEN || '';
-const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Llama-3.1-8B';
+const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Meta-Llama-3.1-8B';
 const HF_POSTTRAINED_MODEL = process.env.HF_POSTTRAINED_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
-const HF_PROVIDER = process.env.HF_PROVIDER || 'featherless-ai';
+const HF_PROVIDER = process.env.HF_PROVIDER || '';
 const HF_BASE_URL = process.env.HF_BASE_URL || 'https://router.huggingface.co';
-const hfClient = HF_TOKEN ? new HfInference(HF_TOKEN, { baseUrl: HF_BASE_URL }) : null;
+let hfClientPromise = null;
+const getHfClient = async () => {
+  if (!HF_TOKEN) {
+    throw new Error('HF_TOKEN missing');
+  }
+  if (!hfClientPromise) {
+    hfClientPromise = import('@huggingface/inference')
+      .then((mod) => {
+        const HfInference = mod.HfInference || mod.default?.HfInference;
+        if (!HfInference) {
+          const keys = Object.keys(mod || {}).join(', ');
+          const defaultKeys = Object.keys(mod?.default || {}).join(', ');
+          throw new Error(`HfInference export not found. module keys: [${keys}] default keys: [${defaultKeys}]`);
+        }
+        return new HfInference(HF_TOKEN, { endpoint: c });
+      });
+  }
+  return hfClientPromise;
+};
 
 const generateGeminiResponse = async (systemInstruction, history, lastMessage) => {
   if (!geminiClient) {
@@ -106,32 +123,77 @@ Model:
   return text;
 };
 
-const buildHfPrompt = (systemInstruction, history, lastMessage) => {
-  const parts = [];
+const buildHfMessages = (systemInstruction, history, lastMessage) => {
+  const messages = [];
   if (systemInstruction && systemInstruction.trim()) {
-    parts.push(`System: ${systemInstruction.trim()}`);
+    messages.push({ role: 'system', content: systemInstruction.trim() });
   }
   for (const msg of history) {
-    parts.push(`${msg.sender === 'user' ? 'User' : 'Assistant'}: ${msg.text}`);
+    messages.push({
+      role: msg.sender === 'user' ? 'user' : 'assistant',
+      content: msg.text,
+    });
   }
   if (lastMessage && lastMessage.trim()) {
-    parts.push(`User: ${lastMessage.trim()}`);
+    messages.push({ role: 'user', content: lastMessage.trim() });
   }
-  parts.push('Assistant:');
+  return messages;
+};
+
+const buildHfBasePrompt = (systemInstruction, history, lastMessage) => {
+  const parts = [];
+  if (systemInstruction && systemInstruction.trim()) {
+    parts.push(`SYSTEM: ${systemInstruction.trim()}`);
+  }
+  for (const msg of history) {
+    const roleLabel = msg.sender === 'user' ? 'HUMAN' : 'MODEL';
+    parts.push(`${roleLabel}: ${msg.text}`);
+  }
+  if (lastMessage && lastMessage.trim()) {
+    parts.push(`HUMAN: ${lastMessage.trim()}`);
+  }
+  parts.push('MODEL:');
   return parts.join('\n');
 };
 
-const generateHuggingFaceResponse = async (model, systemInstruction, history, lastMessage) => {
-  if (!hfClient) {
+const generateHuggingFaceResponse = async (model, systemInstruction, history, lastMessage, mode) => {
+  if (!HF_PROVIDER) {
+    throw new Error('HF_PROVIDER missing');
+  }
+  if (!HF_TOKEN) {
     throw new Error('HF_TOKEN missing');
   }
-  const prompt = buildHfPrompt(systemInstruction, history, lastMessage);
-  const response = await hfClient.textGeneration({
-    model,
-    inputs: prompt,
-    provider: HF_PROVIDER,
+  const providerModel = `${model}:${HF_PROVIDER}`;
+  const url = mode === 'text'
+    ? `${HF_BASE_URL}/${encodeURIComponent(HF_PROVIDER)}/v1/completions`
+    : `${HF_BASE_URL}/v1/chat/completions`;
+  const prompt = buildHfBasePrompt(systemInstruction, history, lastMessage);
+  const body = mode === 'text'
+    ? {
+      model,
+      prompt,
+      max_tokens: 20,
+      max_new_tokens: 20,
+      stop: ['\nHUMAN:'],
+    }
+    : { model: providerModel, messages: buildHfMessages(systemInstruction, history, lastMessage), stream: false };
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${HF_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
-  return response?.generated_text || '...';
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`HF error: ${response.status} ${errText}`);
+  }
+  const data = await response.json();
+  if (mode === 'text') {
+    return data?.choices?.[0]?.text || data?.generated_text || '...';
+  }
+  return data?.choices?.[0]?.message?.content || '...';
 };
 
 const getSheetsClient = () => {
@@ -173,7 +235,7 @@ const pickAgentForCondition = (condition) => {
     return random < 0.5 ? AGENTS.GEMINI_STUDENT : AGENTS.REAL_STUDENT;
   }
   if (condition === CONDITIONS.BASE_VS_POSTTRAINED) {
-    return random < 0.5 ? AGENTS.OLLAMA_BASE : AGENTS.OLLAMA_POSTTRAINED;
+    return random < 0.5 ? AGENTS.LLAMA_BASE : AGENTS.LLAMA_POSTTRAINED;
   }
   return null;
 };
@@ -228,8 +290,10 @@ app.post('/api/hf', async (req, res) => {
     if (!agentType || !lastMessage) {
       return res.status(400).json({ error: 'invalid_request' });
     }
-    const model = agentType === AGENTS.OLLAMA_POSTTRAINED ? HF_POSTTRAINED_MODEL : HF_BASE_MODEL;
-    const responseText = await generateHuggingFaceResponse(model, systemInstruction, history, lastMessage);
+    const isPostTrained = agentType === AGENTS.LLAMA_POSTTRAINED;
+    const model = isPostTrained ? HF_POSTTRAINED_MODEL : HF_BASE_MODEL;
+    const mode = isPostTrained ? 'chat' : 'text';
+    const responseText = await generateHuggingFaceResponse(model, systemInstruction, history, lastMessage, mode);
     return res.json({ text: responseText });
   } catch (error) {
     console.error('HuggingFace API error:', error?.message || error);

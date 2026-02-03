@@ -12,6 +12,15 @@ interface ChatScreenProps {
 
 const TOTAL_TIME_MS = 3 * 60 * 1000; // 3 minutes
 
+const DEBUG_AGENT_LABELS: Record<AgentType, string> = {
+  [AgentType.ELIZA_CLASSIC]: 'Eliza',
+  [AgentType.GEMINI_ELIZA]: 'Gemini Eliza',
+  [AgentType.GEMINI_STUDENT]: 'Gemini Student',
+  [AgentType.REAL_STUDENT]: 'Real Student',
+  [AgentType.LLAMA_BASE]: 'Base (Llama-3.1-8B)',
+  [AgentType.LLAMA_POSTTRAINED]: 'Post-trained (Llama-3.1-8B-Instruct)',
+};
+
 export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, onFinished, debugMode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -232,7 +241,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
         {debugMode && (
           <div className="absolute top-0 left-0 w-full h-full pointer-events-none flex items-center justify-center">
             <div className="bg-red-900/90 text-red-100 px-3 py-1 rounded-md text-xs font-mono border border-red-500 shadow-lg">
-              DEBUG: {agentType}
+              DEBUG: {DEBUG_AGENT_LABELS[agentType] || agentType}
             </div>
           </div>
         )}

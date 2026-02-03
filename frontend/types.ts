@@ -16,8 +16,8 @@ export enum AgentType {
   GEMINI_ELIZA = 'GEMINI_ELIZA',
   GEMINI_STUDENT = 'GEMINI_STUDENT',
   REAL_STUDENT = 'REAL_STUDENT', // In this demo, this will be simulated
-  OLLAMA_BASE = 'OLLAMA_BASE',
-  OLLAMA_POSTTRAINED = 'OLLAMA_POSTTRAINED',
+  LLAMA_BASE = 'LLAMA_BASE',
+  LLAMA_POSTTRAINED = 'LLAMA_POSTTRAINED',
 }
 
 export interface Message {

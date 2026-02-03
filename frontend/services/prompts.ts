@@ -68,14 +68,14 @@ export const GEMINI_STUDENT_GREETING_SYSTEM = `
 The user has connected. Start the conversation with a short, friendly greeting in a complete sentence.
 `;
 
-export const OLLAMA_BASE_SYSTEM = `
+export const LLAMA_BASE_SYSTEM = `
+You are in a conversation with a student. You produce conversational text that says MODEL:
+`;
+
+export const LLAMA_POSTTRAINED_SYSTEM = `
 You are a conversational partner in a short class experiment. Reply in 1–2 complete sentences with proper punctuation.
 `;
 
-export const OLLAMA_POSTTRAINED_SYSTEM = `
-You are a conversational partner in a short class experiment. Reply in 1–2 complete sentences with proper punctuation.
-`;
-
-export const OLLAMA_GREETING_SYSTEM = `
+export const LLAMA_GREETING_SYSTEM = `
 The user has connected. Start the conversation with a short, friendly greeting in a complete sentence.
 `;

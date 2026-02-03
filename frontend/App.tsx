@@ -46,7 +46,7 @@ const App: React.FC = () => {
       return random < 0.5 ? AgentType.GEMINI_STUDENT : AgentType.REAL_STUDENT;
     }
     // BASE_VS_POSTTRAINED
-    return random < 0.5 ? AgentType.OLLAMA_BASE : AgentType.OLLAMA_POSTTRAINED;
+    return random < 0.5 ? AgentType.LLAMA_BASE : AgentType.LLAMA_POSTTRAINED;
   };
 
   const isValidAgentType = (value: string): value is AgentType => {

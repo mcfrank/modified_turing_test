@@ -110,7 +110,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
             </p>
           </button>
           <button
-            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.OLLAMA_BASE)}
+            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.LLAMA_BASE)}
             className="group relative flex flex-col items-center p-6 bg-gray-800 border-2 border-red-700 rounded-xl hover:border-red-500 hover:bg-gray-750 transition-all duration-300"
           >
             <h2 className="text-lg font-semibold text-white mb-2">Debug: Force Base Model</h2>
@@ -119,7 +119,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
             </p>
           </button>
           <button
-            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.OLLAMA_POSTTRAINED)}
+            onClick={() => onSelectCondition(Condition.BASE_VS_POSTTRAINED, AgentType.LLAMA_POSTTRAINED)}
             className="group relative flex flex-col items-center p-6 bg-gray-800 border-2 border-red-700 rounded-xl hover:border-red-500 hover:bg-gray-750 transition-all duration-300"
           >
             <h2 className="text-lg font-semibold text-white mb-2">Debug: Force Post-trained</h2>
