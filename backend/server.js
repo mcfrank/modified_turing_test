@@ -62,6 +62,7 @@ const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Meta-Llama-3.1-8B
 const HF_POSTTRAINED_MODEL = process.env.HF_POSTTRAINED_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
 const HF_PROVIDER = process.env.HF_PROVIDER || '';
 const HF_BASE_URL = process.env.HF_BASE_URL || 'https://router.huggingface.co';
+const HF_BASE_MAX_TOKENS = Number.parseInt(process.env.HF_BASE_MAX_TOKENS || '60', 10);
 let hfClientPromise = null;
 const getHfClient = async () => {
   if (!HF_TOKEN) {
@@ -172,8 +173,10 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
     ? {
       model,
       prompt,
-      max_tokens: 20,
-      max_new_tokens: 20,
+      max_tokens: Number.isNaN(HF_BASE_MAX_TOKENS) ? 60 : HF_BASE_MAX_TOKENS,
+      max_new_tokens: Number.isNaN(HF_BASE_MAX_TOKENS) ? 60 : HF_BASE_MAX_TOKENS,
+      return_full_text: false,
+      repetition_penalty: 1.1,
       stop: ['\nHUMAN:'],
     }
     : { model: providerModel, messages: buildHfMessages(systemInstruction, history, lastMessage), stream: false };
@@ -191,7 +194,9 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
   }
   const data = await response.json();
   if (mode === 'text') {
-    return data?.choices?.[0]?.text || data?.generated_text || '...';
+    const text = data?.choices?.[0]?.text || data?.generated_text || '';
+    if (!text) return '...';
+    return text.startsWith(prompt) ? text.slice(prompt.length).trim() : text;
   }
   return data?.choices?.[0]?.message?.content || '...';
 };

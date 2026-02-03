@@ -198,7 +198,8 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     }
 
     try {
-      const responseText = await sendToAgent(agentType, messages, userMsg.text);
+      const history = messagesRef.current;
+      const responseText = await sendToAgent(agentType, history, userMsg.text);
       
       // Only add response here if it's NOT a real student.
       // Real student responses come via the useEffect listener above.
