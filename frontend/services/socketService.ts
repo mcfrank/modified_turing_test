@@ -20,11 +20,12 @@ class SocketService {
     });
   }
 
-  joinQueue(onMatchFound: () => void, onTimeout?: () => void) {
+  joinQueue(sessionId: string | null, onMatchFound: () => void, onTimeout?: () => void) {
     if (!this.socket) this.connect();
 
-    this.socket?.emit("join_queue");
+    this.socket?.emit("join_queue", { sessionId });
     
+    this.socket?.off("match_found");
     this.socket?.on("match_found", (data: { roomId: string }) => {
       this.roomId = data.roomId;
       onMatchFound();
@@ -43,6 +44,18 @@ class SocketService {
     if (this.socket && this.roomId) {
       this.socket.emit("send_message", { roomId: this.roomId, text });
     }
+  }
+
+  sendTyping() {
+    if (this.socket && this.roomId) {
+      this.socket.emit("typing", { roomId: this.roomId });
+    }
+  }
+
+  onPartnerTyping(callback: () => void) {
+    if (!this.socket) return;
+    this.socket.off("partner_typing");
+    this.socket.on("partner_typing", callback);
   }
 
   onReceiveMessage(callback: (msg: Message) => void) {

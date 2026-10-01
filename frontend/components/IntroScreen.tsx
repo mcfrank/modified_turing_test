@@ -22,6 +22,10 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
         You will be paired with an agent. Your goal is to interact with them for 3 minutes 
         and then evaluate the interaction.
       </p>
+      <p className="text-gray-500 -mt-8 mb-12 max-w-lg text-sm">
+        Chats are saved anonymously (no names or logins) and may be shown in class.
+        Please don't share anything personal.
+      </p>
 
       {!debugMode && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">

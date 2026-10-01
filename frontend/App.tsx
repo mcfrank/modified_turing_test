@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AppScreen, Condition, AgentType, ChatStats } from './types';
+import { AppScreen, Condition, AgentType, ChatStats, Message } from './types';
 import { IntroScreen } from './components/IntroScreen';
 import { WaitingScreen } from './components/WaitingScreen';
 import { ChatScreen } from './components/ChatScreen';
@@ -12,6 +12,9 @@ const App: React.FC = () => {
   const [assignedAgent, setAssignedAgent] = useState<AgentType | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [chatStats, setChatStats] = useState<ChatStats | null>(null);
+  const [transcript, setTranscript] = useState<Message[]>([]);
+  const [endReason, setEndReason] = useState<string | null>(null);
+  const [giveaways, setGiveaways] = useState(false);
   const [loggingMessage, setLoggingMessage] = useState<string | null>(null);
   const [waitingMessage, setWaitingMessage] = useState<string | null>(null);
   const [debugMode, setDebugMode] = useState(false);
@@ -34,21 +37,6 @@ const App: React.FC = () => {
     return () => { isMounted = false; };
   }, []);
 
-  // Function to determine agent assignment logic
-  const assignAgent = (condition: Condition): AgentType => {
-    const random = Math.random();
-    if (condition === Condition.ELIZA_VS_GEMINI) {
-      // 50/50 split
-      return random < 0.5 ? AgentType.ELIZA_CLASSIC : AgentType.GEMINI_ELIZA;
-    }
-    if (condition === Condition.GEMINI_VS_STANFORD) {
-      // 50/50 split
-      return random < 0.5 ? AgentType.GEMINI_STUDENT : AgentType.REAL_STUDENT;
-    }
-    // BASE_VS_POSTTRAINED
-    return random < 0.5 ? AgentType.LLAMA_BASE : AgentType.LLAMA_POSTTRAINED;
-  };
-
   const isValidAgentType = (value: string): value is AgentType => {
     return Object.values(AgentType).includes(value as AgentType);
   };
@@ -61,17 +49,16 @@ const App: React.FC = () => {
     setLoggingMessage(null);
     setWaitingMessage(null);
     
-    let agent = forcedAgentType || assignAgent(condition);
+    let agent: AgentType | null = null;
     let newSessionId: string | null = null;
 
+    let newGiveaways = false;
+
     try {
-      if (forcedAgentType) {
-        throw new Error('debug_forced_agent');
-      }
       const response = await fetch('/api/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ condition }),
+        body: JSON.stringify({ condition, forcedAgentType }),
       });
       if (response.ok) {
         const data = await response.json();
@@ -81,18 +68,31 @@ const App: React.FC = () => {
         if (data?.sessionId) {
           newSessionId = data.sessionId;
         }
+        newGiveaways = Boolean(data?.giveaways);
       }
     } catch (error) {
-      console.warn('Failed to start session on backend, using local assignment', error);
+      console.warn('Failed to start session on backend', error);
+    }
+
+    // The backend only answers for sessions it issued, so there's no local fallback.
+    if (!agent || !newSessionId) {
+      setWaitingMessage("Sorry, couldn't start a session. Please try again.");
+      setTimeout(() => {
+        setSelectedCondition(null);
+        setCurrentScreen(AppScreen.INTRO);
+      }, 3000);
+      return;
     }
 
     setAssignedAgent(agent);
     setSessionId(newSessionId);
+    setGiveaways(newGiveaways);
 
     if (agent === AgentType.REAL_STUDENT) {
       // Connect to socket and wait for real match
       socketService.connect();
       socketService.joinQueue(
+        newSessionId,
         () => {
           // Match found!
           setCurrentScreen(AppScreen.CHAT);
@@ -115,12 +115,14 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChatFinished = (stats: ChatStats) => {
+  const handleChatFinished = (stats: ChatStats, messages: Message[], reason: string) => {
     // If we were using socket, disconnect now
     if (assignedAgent === AgentType.REAL_STUDENT) {
       socketService.disconnect();
     }
     setChatStats(stats);
+    setTranscript(messages);
+    setEndReason(reason);
     setCurrentScreen(AppScreen.EVALUATION);
   };
 
@@ -136,7 +138,7 @@ const App: React.FC = () => {
       durationSeconds: 0,
     };
     const resolvedStats = chatStats || fallbackStats;
-    const resolvedSessionId = sessionId || `local-${Date.now()}`;
+    const resolvedSessionId = sessionId;
 
     // Here we would typically save the data to a backend
     console.log("Session Result:", {
@@ -158,6 +160,8 @@ const App: React.FC = () => {
           agentType: assignedAgent,
           rating,
           ...resolvedStats,
+          endReason,
+          transcript,
         }),
       });
       if (response.ok) {
@@ -192,6 +196,8 @@ const App: React.FC = () => {
         <ChatScreen 
           condition={selectedCondition} 
           agentType={assignedAgent} 
+          sessionId={sessionId}
+          giveaways={giveaways}
           onFinished={handleChatFinished} 
           debugMode={debugMode}
         />

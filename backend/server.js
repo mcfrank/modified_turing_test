@@ -3,14 +3,16 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { Server } = require("socket.io");
-const { google } = require('googleapis');
+const { Firestore, FieldValue } = require('@google-cloud/firestore');
+const { OAuth2Client } = require('google-auth-library');
 const { GoogleGenAI } = require('@google/genai');
+const { AGENT_PROMPTS } = require('./prompts');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // 1. Serve Static Files (The React App)
 // Make sure this points to where you copied the files in the Dockerfile
@@ -31,31 +33,26 @@ const AGENTS = {
   LLAMA_POSTTRAINED: 'LLAMA_POSTTRAINED',
 };
 
+// sessionId -> { condition, agentType, giveaways, startedAt, messages }.
+// Model calls are only allowed for a live server-issued session, within these
+// caps, so the endpoint can't be used as a general-purpose LLM proxy.
 const sessions = new Map();
+const SESSION_MAX_MS = 6 * 60 * 1000; // 3-minute chat plus matching and slack
+const SESSION_MAX_MESSAGES = 60;
 
-const SHEETS_ID = process.env.GOOGLE_SHEETS_ID || '';
-const SHEETS_RANGE = process.env.GOOGLE_SHEETS_RANGE || 'Sheet1!A1';
-const SHEETS_ID_MASKED = SHEETS_ID ? `${SHEETS_ID.slice(0, 4)}...${SHEETS_ID.slice(-4)}` : '(missing)';
-console.log(`[sheets] id=${SHEETS_ID_MASKED} range=${SHEETS_RANGE}`);
 const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 
-const getServiceAccount = () => {
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  }
-  if (process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
-    const decoded = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8');
-    return JSON.parse(decoded);
-  }
-  return null;
-};
-
+// Gemini: uses Vertex AI via Application Default Credentials (the Cloud Run
+// service account in production) when GOOGLE_GENAI_USE_VERTEXAI=true and
+// GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION are set; otherwise GEMINI_API_KEY.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const GEMINI_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'minimal';
 const GEMINI_TEMPERATURE = Number.parseFloat(process.env.GEMINI_TEMPERATURE || '1.0');
 const GEMINI_TOP_P = Number.parseFloat(process.env.GEMINI_TOP_P || '0.95');
 const GEMINI_TOP_K = Number.parseInt(process.env.GEMINI_TOP_K || '40', 10);
 const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI_SEED, 10) : undefined;
-const geminiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+const geminiClient = new GoogleGenAI(GEMINI_API_KEY ? { apiKey: GEMINI_API_KEY } : {});
 
 const HF_TOKEN = process.env.HF_TOKEN || '';
 const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Meta-Llama-3.1-8B';
@@ -63,37 +60,38 @@ const HF_POSTTRAINED_MODEL = process.env.HF_POSTTRAINED_MODEL || 'meta-llama/Lla
 const HF_PROVIDER = process.env.HF_PROVIDER || '';
 const HF_BASE_URL = process.env.HF_BASE_URL || 'https://router.huggingface.co';
 const HF_BASE_MAX_TOKENS = Number.parseInt(process.env.HF_BASE_MAX_TOKENS || '60', 10);
-let hfClientPromise = null;
-const getHfClient = async () => {
-  if (!HF_TOKEN) {
-    throw new Error('HF_TOKEN missing');
-  }
-  if (!hfClientPromise) {
-    hfClientPromise = import('@huggingface/inference')
-      .then((mod) => {
-        const HfInference = mod.HfInference || mod.default?.HfInference;
-        if (!HfInference) {
-          const keys = Object.keys(mod || {}).join(', ');
-          const defaultKeys = Object.keys(mod?.default || {}).join(', ');
-          throw new Error(`HfInference export not found. module keys: [${keys}] default keys: [${defaultKeys}]`);
-        }
-        return new HfInference(HF_TOKEN, { endpoint: c });
-      });
-  }
-  return hfClientPromise;
+
+// Logged at startup so a bad token or an HF block shows up before class.
+if (HF_TOKEN) {
+  fetch('https://huggingface.co/api/whoami-v2', { headers: { Authorization: `Bearer ${HF_TOKEN}` } })
+    .then(async (r) => console.log(`[hf] whoami status=${r.status}`, r.ok ? (await r.json()).name : ''))
+    .catch((e) => console.error('[hf] whoami failed:', e.message));
+}
+
+const db = new Firestore({ databaseId: process.env.FIRESTORE_DATABASE || '(default)' });
+const sessionsCol = db.collection('turing_sessions');
+const settingsDoc = db.collection('turing_settings').doc('current');
+const DEFAULT_SETTINGS = { giveaways: false, run: 'default', runs: ['default'] };
+
+const OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+const oauthClient = new OAuth2Client(OAUTH_CLIENT_ID);
+
+const getSettings = async () => {
+  const snap = await settingsDoc.get();
+  return { ...DEFAULT_SETTINGS, ...(snap.exists ? snap.data() : {}) };
+};
+
+const modelForAgent = (agentType) => {
+  if (agentType === AGENTS.ELIZA_CLASSIC) return 'elizabot';
+  if (agentType === AGENTS.LLAMA_BASE) return HF_BASE_MODEL;
+  if (agentType === AGENTS.LLAMA_POSTTRAINED) return HF_POSTTRAINED_MODEL;
+  if (agentType === AGENTS.REAL_STUDENT) return 'human';
+  return GEMINI_MODEL;
 };
 
 const generateGeminiResponse = async (systemInstruction, history, lastMessage) => {
-  if (!geminiClient) {
-    throw new Error('GEMINI_API_KEY missing');
-  }
-
-  const countWords = (text) => {
-    const trimmed = (text || '').trim();
-    if (!trimmed) return 0;
-    return trimmed.split(/\s+/).length;
-  };
-
   const conversationHistory = history
     .map((m) => `${m.sender === 'user' ? 'User' : 'Model'}: ${m.text}`)
     .join('\n');
@@ -105,7 +103,7 @@ Model:
 `;
 
   const response = await geminiClient.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: GEMINI_MODEL,
     contents: fullPrompt,
     config: {
       systemInstruction,
@@ -113,14 +111,12 @@ Model:
       topP: Number.isNaN(GEMINI_TOP_P) ? 0.95 : GEMINI_TOP_P,
       topK: Number.isNaN(GEMINI_TOP_K) ? 40 : GEMINI_TOP_K,
       seed: GEMINI_SEED,
-      thinkingLevel: 'medium',
-      thinkingBudget: 0,
+      thinkingConfig: { thinkingLevel: GEMINI_THINKING_LEVEL },
     },
   });
 
-  let text = response.text || '...';
+  const text = response.text || '...';
   console.log('[gemini] response:', text);
-
   return text;
 };
 
@@ -129,14 +125,18 @@ const buildHfMessages = (systemInstruction, history, lastMessage) => {
   if (systemInstruction && systemInstruction.trim()) {
     messages.push({ role: 'system', content: systemInstruction.trim() });
   }
+  const push = (role, content) => {
+    // Chat templates expect alternating roles; merge consecutive messages
+    // from the same side (possible now that input isn't locked while waiting).
+    const prev = messages[messages.length - 1];
+    if (prev && prev.role === role) prev.content += `\n${content}`;
+    else messages.push({ role, content });
+  };
   for (const msg of history) {
-    messages.push({
-      role: msg.sender === 'user' ? 'user' : 'assistant',
-      content: msg.text,
-    });
+    push(msg.sender === 'user' ? 'user' : 'assistant', msg.text);
   }
   if (lastMessage && lastMessage.trim()) {
-    messages.push({ role: 'user', content: lastMessage.trim() });
+    push('user', lastMessage.trim());
   }
   return messages;
 };
@@ -189,7 +189,7 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    const errText = await response.text();
+    const errText = (await response.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
     throw new Error(`HF error: ${response.status} ${errText}`);
   }
   const data = await response.json();
@@ -199,36 +199,6 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
     return text.startsWith(prompt) ? text.slice(prompt.length).trim() : text;
   }
   return data?.choices?.[0]?.message?.content || '...';
-};
-
-const getSheetsClient = () => {
-  const serviceAccount = getServiceAccount();
-  if (!serviceAccount) return null;
-
-  const auth = new google.auth.JWT({
-    email: serviceAccount.client_email,
-    key: serviceAccount.private_key?.replace(/\\n/g, '\n'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-
-  return google.sheets({ version: 'v4', auth });
-};
-
-const appendEvaluationRow = async (row) => {
-  if (!SHEETS_ID) return { skipped: true, reason: 'missing_sheet_id' };
-
-  const sheets = getSheetsClient();
-  if (!sheets) return { skipped: true, reason: 'missing_service_account' };
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEETS_ID,
-    range: SHEETS_RANGE,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [row] },
-  });
-
-  return { skipped: false };
 };
 
 const pickAgentForCondition = (condition) => {
@@ -245,64 +215,131 @@ const pickAgentForCondition = (condition) => {
   return null;
 };
 
+const isLive = (session) => Date.now() - session.startedAt < SESSION_MAX_MS;
+
+// Looks up a session in memory, falling back to Firestore so that sessions
+// survive an instance restart mid-class.
+const getLiveSession = async (sessionId) => {
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  let session = sessions.get(sessionId);
+  if (!session) {
+    const snap = await sessionsCol.doc(sessionId).get();
+    const data = snap.exists ? snap.data() : null;
+    if (!data || data.status === 'completed' || !data.startedAt) return null;
+    session = {
+      condition: data.condition,
+      agentType: data.agentType,
+      giveaways: Boolean(data.giveaways),
+      startedAt: data.startedAt.toMillis(),
+      messages: 0,
+    };
+    sessions.set(sessionId, session);
+  }
+  return isLive(session) ? session : null;
+};
+
+setInterval(() => {
+  for (const [id, session] of sessions) {
+    if (!isLive(session)) sessions.delete(id);
+  }
+}, 60 * 1000).unref();
+
+const updateSession = (sessionId, data) => {
+  if (!sessionId) return Promise.resolve();
+  return sessionsCol.doc(sessionId).set(data, { merge: true })
+    .catch((error) => console.error('Firestore session update failed:', error?.message || error));
+};
+
 // 2. API Routes
 app.get('/api/hello', (req, res) => {
   res.json({ message: "Hello from Node Backend" });
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ debugMode: DEBUG_MODE });
+  res.json({ debugMode: DEBUG_MODE, oauthClientId: OAUTH_CLIENT_ID });
 });
 
-app.post('/api/session/start', (req, res) => {
-  const { condition } = req.body || {};
+app.post('/api/session/start', async (req, res) => {
+  const { condition, forcedAgentType } = req.body || {};
   if (!condition) {
     return res.status(400).json({ error: 'condition_required' });
   }
 
-  const agentType = pickAgentForCondition(condition);
+  const agentType = DEBUG_MODE && Object.values(AGENTS).includes(forcedAgentType)
+    ? forcedAgentType
+    : pickAgentForCondition(condition);
   if (!agentType) {
     return res.status(400).json({ error: 'invalid_condition' });
   }
 
+  let settings = DEFAULT_SETTINGS;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    console.error('Failed to read settings, using defaults:', error?.message || error);
+  }
+
   const sessionId = crypto.randomUUID();
-  sessions.set(sessionId, {
+  sessions.set(sessionId, { condition, agentType, giveaways: settings.giveaways, startedAt: Date.now(), messages: 0 });
+  await updateSession(sessionId, {
     condition,
     agentType,
-    startedAt: Date.now(),
+    model: modelForAgent(agentType),
+    run: settings.run,
+    giveaways: settings.giveaways,
+    debug: DEBUG_MODE,
+    status: 'started',
+    startedAt: FieldValue.serverTimestamp(),
   });
 
-  return res.json({ sessionId, agentType });
+  return res.json({ sessionId, agentType, giveaways: settings.giveaways });
 });
 
-app.post('/api/gemini', async (req, res) => {
+app.post('/api/agent', async (req, res) => {
+  const { sessionId, history = [], lastMessage = '', greeting = false } = req.body || {};
+  let session;
   try {
-    const { systemInstruction, history = [], lastMessage = '' } = req.body || {};
-    if (!systemInstruction || !lastMessage) {
-      return res.status(400).json({ error: 'invalid_request' });
-    }
-    const responseText = await generateGeminiResponse(systemInstruction, history, lastMessage);
-    return res.json({ text: responseText });
+    session = await getLiveSession(sessionId);
   } catch (error) {
-    console.error('Gemini API error:', error?.message || error);
-    return res.status(500).json({ error: 'gemini_failed' });
+    console.error('Session lookup failed:', error?.message || error);
   }
-});
+  if (!session) {
+    return res.status(403).json({ error: 'no_live_session' });
+  }
+  if (++session.messages > SESSION_MAX_MESSAGES) {
+    return res.status(429).json({ error: 'session_message_limit' });
+  }
+  const resolvedAgentType = session.agentType;
+  const giveaways = session.giveaways;
+  const promptKey = resolvedAgentType === AGENTS.GEMINI_STUDENT && giveaways
+    ? 'GEMINI_STUDENT_LEGACY'
+    : resolvedAgentType;
+  const prompts = AGENT_PROMPTS[promptKey];
+  if (!prompts || !Array.isArray(history) || history.length > 200 || String(lastMessage).length > 2000) {
+    return res.status(400).json({ error: 'invalid_request' });
+  }
+  if (!greeting && !lastMessage) {
+    return res.status(400).json({ error: 'invalid_request' });
+  }
 
-app.post('/api/hf', async (req, res) => {
+  const systemInstruction = greeting ? (prompts.greetingSystem || prompts.system) : prompts.system;
+  const message = greeting ? prompts.greeting : lastMessage;
+  const cleanHistory = history.map((m) => ({ sender: m.sender, text: String(m.text || '') }));
+
   try {
-    const { agentType, systemInstruction = '', history = [], lastMessage = '' } = req.body || {};
-    if (!agentType || !lastMessage) {
-      return res.status(400).json({ error: 'invalid_request' });
+    let text;
+    if (resolvedAgentType === AGENTS.LLAMA_BASE || resolvedAgentType === AGENTS.LLAMA_POSTTRAINED) {
+      const isPostTrained = resolvedAgentType === AGENTS.LLAMA_POSTTRAINED;
+      text = await generateHuggingFaceResponse(
+        isPostTrained ? HF_POSTTRAINED_MODEL : HF_BASE_MODEL,
+        systemInstruction, cleanHistory, message, isPostTrained ? 'chat' : 'text');
+    } else {
+      text = await generateGeminiResponse(systemInstruction, cleanHistory, message);
     }
-    const isPostTrained = agentType === AGENTS.LLAMA_POSTTRAINED;
-    const model = isPostTrained ? HF_POSTTRAINED_MODEL : HF_BASE_MODEL;
-    const mode = isPostTrained ? 'chat' : 'text';
-    const responseText = await generateHuggingFaceResponse(model, systemInstruction, history, lastMessage, mode);
-    return res.json({ text: responseText });
+    return res.json({ text });
   } catch (error) {
-    console.error('HuggingFace API error:', error?.message || error);
-    return res.status(500).json({ error: 'hf_failed' });
+    console.error(`Agent API error (${resolvedAgentType}):`, error?.message || error);
+    return res.status(500).json({ error: 'agent_failed' });
   }
 });
 
@@ -310,8 +347,6 @@ app.post('/api/evaluation', async (req, res) => {
   try {
     const {
       sessionId,
-      condition,
-      agentType,
       rating,
       turnsUser = 0,
       turnsAgent = 0,
@@ -320,45 +355,101 @@ app.post('/api/evaluation', async (req, res) => {
       wordsAgent = 0,
       wordsTotal,
       durationSeconds = 0,
+      endReason = null,
+      transcript = [],
     } = req.body || {};
 
     if (!sessionId) {
       return res.status(400).json({ error: 'session_id_required' });
     }
 
-    const session = sessions.get(sessionId);
-    const resolvedCondition = session?.condition || condition || 'unknown';
-    const resolvedAgentType = session?.agentType || agentType || 'unknown';
-    const resolvedTurnsTotal = typeof turnsTotal === 'number' ? turnsTotal : turnsUser + turnsAgent;
-    const resolvedWordsTotal = typeof wordsTotal === 'number' ? wordsTotal : wordsUser + wordsAgent;
-
-    const row = [
-      new Date().toISOString(),
-      sessionId,
-      resolvedCondition,
-      resolvedAgentType,
+    const snap = await sessionsCol.doc(String(sessionId)).get();
+    if (!snap.exists || snap.data().status === 'completed') {
+      return res.status(403).json({ error: 'unknown_session' });
+    }
+    const data = {
+      status: 'completed',
+      completedAt: FieldValue.serverTimestamp(),
+      rating: Number(rating),
       turnsUser,
       turnsAgent,
-      resolvedTurnsTotal,
+      turnsTotal: typeof turnsTotal === 'number' ? turnsTotal : turnsUser + turnsAgent,
       wordsUser,
       wordsAgent,
-      resolvedWordsTotal,
+      wordsTotal: typeof wordsTotal === 'number' ? wordsTotal : wordsUser + wordsAgent,
       durationSeconds,
-      rating,
-    ];
-
-    const result = await appendEvaluationRow(row);
+      endReason,
+      transcript: (Array.isArray(transcript) ? transcript : []).slice(0, 300).map((m) => ({
+        sender: m.sender,
+        text: String(m.text || '').slice(0, 2000),
+        t: Number(m.timestamp) || null,
+      })),
+    };
+    await sessionsCol.doc(sessionId).set(data, { merge: true });
     sessions.delete(sessionId);
 
-    return res.json({ ok: true, logged: !result.skipped, reason: result.reason || null });
+    return res.json({ ok: true, logged: true });
   } catch (error) {
-    const status = error?.response?.status;
-    const data = error?.response?.data;
     console.error('Evaluation logging error:', error?.message || error);
-    if (status || data) {
-      console.error('Sheets API response:', { status, data });
-    }
     return res.status(500).json({ error: 'logging_failed' });
+  }
+});
+
+// Admin API: Google Sign-In ID token, checked against ADMIN_EMAILS.
+const requireAdmin = async (req, res, next) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (!token || !OAUTH_CLIENT_ID) return res.status(401).json({ error: 'unauthenticated' });
+  try {
+    const ticket = await oauthClient.verifyIdToken({ idToken: token, audience: OAUTH_CLIENT_ID });
+    const payload = ticket.getPayload();
+    const email = (payload?.email || '').toLowerCase();
+    if (!payload?.email_verified || !ADMIN_EMAILS.includes(email)) {
+      return res.status(403).json({ error: 'forbidden', email });
+    }
+    req.adminEmail = email;
+    return next();
+  } catch (error) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+};
+
+const toIso = (ts) => (ts && typeof ts.toDate === 'function' ? ts.toDate().toISOString() : null);
+
+const loadSessions = async (run) => {
+  const query = run ? sessionsCol.where('run', '==', run) : sessionsCol;
+  const snap = await query.get();
+  return snap.docs.map((d) => {
+    const s = d.data();
+    return { ...s, id: d.id, startedAt: toIso(s.startedAt), completedAt: toIso(s.completedAt) };
+  });
+};
+
+app.get('/api/admin/me', requireAdmin, (req, res) => {
+  res.json({ email: req.adminEmail });
+});
+
+app.get('/api/admin/settings', requireAdmin, async (req, res) => {
+  res.json(await getSettings());
+});
+
+app.put('/api/admin/settings', requireAdmin, async (req, res) => {
+  const { giveaways, run } = req.body || {};
+  const update = {};
+  if (typeof giveaways === 'boolean') update.giveaways = giveaways;
+  if (typeof run === 'string' && run.trim()) {
+    update.run = run.trim().slice(0, 80);
+    update.runs = FieldValue.arrayUnion(update.run);
+  }
+  await settingsDoc.set({ ...update, updatedBy: req.adminEmail }, { merge: true });
+  res.json(await getSettings());
+});
+
+app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
+  try {
+    res.json(await loadSessions(req.query.run || null));
+  } catch (error) {
+    console.error('Admin sessions error:', error?.message || error);
+    res.status(500).json({ error: 'load_failed' });
   }
 });
 
@@ -366,29 +457,39 @@ app.post('/api/evaluation', async (req, res) => {
 const waitingQueue = [];
 const queueTimeouts = new Map();
 const socketRoomMembership = new Map();
+const socketSessionIds = new Map();
 
 io.on('connection', (socket) => {
   console.log('a user connected', socket.id);
 
-  socket.on('join_queue', (payload = {}) => {
-    if (waitingQueue.length > 0) {
-      const partnerId = waitingQueue.shift();
-      if (partnerId) {
-        const partnerTimeout = queueTimeouts.get(partnerId);
-        if (partnerTimeout) clearTimeout(partnerTimeout);
-        queueTimeouts.delete(partnerId);
+  socket.on('join_queue', async (payload = {}) => {
+    const session = await getLiveSession(payload.sessionId).catch(() => null);
+    if (!session || session.agentType !== AGENTS.REAL_STUDENT || waitingQueue.includes(socket.id)) {
+      socket.emit('match_not_found');
+      return;
+    }
+    socketSessionIds.set(socket.id, payload.sessionId);
 
-        const roomId = crypto.randomUUID();
-        socket.join(roomId);
-        const partnerSocket = io.sockets.sockets.get(partnerId);
-        if (partnerSocket) {
-          partnerSocket.join(roomId);
-          partnerSocket.emit('match_found', { roomId });
-          socket.emit('match_found', { roomId });
-          socketRoomMembership.set(partnerId, roomId);
-          socketRoomMembership.set(socket.id, roomId);
-        }
-      }
+    // Skip partners that disconnected without being removed from the queue.
+    let partnerSocket = null;
+    while (waitingQueue.length > 0 && !partnerSocket) {
+      const partnerId = waitingQueue.shift();
+      const partnerTimeout = queueTimeouts.get(partnerId);
+      if (partnerTimeout) clearTimeout(partnerTimeout);
+      queueTimeouts.delete(partnerId);
+      partnerSocket = io.sockets.sockets.get(partnerId) || null;
+    }
+
+    if (partnerSocket) {
+      const roomId = crypto.randomUUID();
+      socket.join(roomId);
+      partnerSocket.join(roomId);
+      partnerSocket.emit('match_found', { roomId });
+      socket.emit('match_found', { roomId });
+      socketRoomMembership.set(partnerSocket.id, roomId);
+      socketRoomMembership.set(socket.id, roomId);
+      updateSession(socketSessionIds.get(socket.id), { roomId });
+      updateSession(socketSessionIds.get(partnerSocket.id), { roomId });
     } else {
       waitingQueue.push(socket.id);
       const timeoutId = setTimeout(() => {
@@ -397,6 +498,7 @@ io.on('connection', (socket) => {
           waitingQueue.splice(idx, 1);
         }
         queueTimeouts.delete(socket.id);
+        updateSession(socketSessionIds.get(socket.id), { status: 'no_partner' });
         socket.emit('match_not_found');
       }, 30000);
       queueTimeouts.set(socket.id, timeoutId);
@@ -411,6 +513,11 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('typing', ({ roomId }) => {
+    if (!roomId) return;
+    socket.to(roomId).emit('partner_typing');
+  });
+
   socket.on('disconnect', () => {
     const idx = waitingQueue.indexOf(socket.id);
     if (idx >= 0) {
@@ -421,6 +528,7 @@ io.on('connection', (socket) => {
       clearTimeout(timeoutId);
       queueTimeouts.delete(socket.id);
     }
+    socketSessionIds.delete(socket.id);
 
     const roomId = socketRoomMembership.get(socket.id);
     if (roomId) {
@@ -431,7 +539,7 @@ io.on('connection', (socket) => {
 });
 
 // 4. Catch-All Handler (IMPORTANT for React Router)
-// Any request that doesn't match an API route or static file 
+// Any request that doesn't match an API route or static file
 // sends back index.html so React can handle the routing.
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

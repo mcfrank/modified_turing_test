@@ -1,16 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AgentType, Message, Condition, ChatStats } from '../types';
-import { sendToAgent, getInitialGreeting } from '../services/chatOrchestrator';
+import { fetchGreeting, fetchReply, getInitialGreetingLegacy, sendToAgentLegacy } from '../services/chatOrchestrator';
 import { socketService } from '../services/socketService';
 
 interface ChatScreenProps {
   condition: Condition;
   agentType: AgentType;
-  onFinished: (stats: ChatStats) => void;
+  sessionId: string | null;
+  // true = legacy interface, where bots speak first, show an instant typing
+  // indicator, lock the input while replying, and reply after a fixed delay;
+  // false = bots and humans are indistinguishable by interface cues.
+  giveaways: boolean;
+  onFinished: (stats: ChatStats, messages: Message[], endReason: string) => void;
   debugMode: boolean;
 }
 
 const TOTAL_TIME_MS = 3 * 60 * 1000; // 3 minutes
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+// Matched-mode timing, roughly a student typing on a laptop.
+const readDelayMs = (text: string) => Math.min(800 + 25 * text.length, 3000) + Math.random() * 1000;
+const typingDelayMs = (text: string) => Math.min(Math.max((text.length / 6) * 1000, 1000), 12000) + Math.random() * 1000;
 
 const DEBUG_AGENT_LABELS: Record<AgentType, string> = {
   [AgentType.ELIZA_CLASSIC]: 'Eliza',
@@ -21,16 +31,46 @@ const DEBUG_AGENT_LABELS: Record<AgentType, string> = {
   [AgentType.LLAMA_POSTTRAINED]: 'Post-trained (Llama-3.1-8B-Instruct)',
 };
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, onFinished, debugMode }) => {
+export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, sessionId, giveaways, onFinished, debugMode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [partnerTyping, setPartnerTyping] = useState(false);
   const [timeLeft, setTimeLeft] = useState(TOTAL_TIME_MS);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesRef = useRef<Message[]>([]);
   const startTimeRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
+  const replyTokenRef = useRef(0);
+  const partnerTypingTimeoutRef = useRef<number | null>(null);
+  const lastTypingEmitRef = useRef(0);
+  const isBot = agentType !== AgentType.REAL_STUDENT;
+  // Legacy mode locks the input while a bot is "typing".
+  const inputLocked = giveaways && isTyping;
+
+  const addAgentMessage = (text: string) => {
+    setMessages(prev => [...prev, {
+      id: 'agent-' + Date.now() + Math.random(),
+      sender: 'agent',
+      text,
+      timestamp: Date.now(),
+    }]);
+  };
+
+  // Matched mode: wait as if reading, show typing for as long as a person
+  // would take to type the reply, then post it. A newer user message that
+  // arrives before typing starts supersedes this reply.
+  const deliverMatched = async (getText: () => Promise<string | null>, readMs: number) => {
+    const token = ++replyTokenRef.current;
+    const [text] = await Promise.all([getText(), sleep(readMs)]);
+    if (!text || token !== replyTokenRef.current || finishedRef.current) return;
+    setIsTyping(true);
+    await sleep(typingDelayMs(text));
+    if (finishedRef.current) return;
+    addAgentMessage(text);
+    if (token === replyTokenRef.current) setIsTyping(false);
+  };
 
   // Initialize with a greeting from agent if applicable
   useEffect(() => {
@@ -43,9 +83,19 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
       // Real students don't trigger automatic greetings, so we don't need to show typing
       if (agentType === AgentType.REAL_STUDENT) return;
 
+      if (!giveaways) {
+        // Like a human partner, open the conversation only about half the
+        // time, and only if the user hasn't already said something.
+        if (Math.random() < 0.5) return;
+        await sleep(3000 + Math.random() * 5000);
+        if (!isMounted || messagesRef.current.length > 0) return;
+        deliverMatched(() => fetchGreeting(agentType, sessionId), 0);
+        return;
+      }
+
       setIsTyping(true);
       try {
-        const greeting = await getInitialGreeting(agentType);
+        const greeting = await getInitialGreetingLegacy(agentType, sessionId);
         if (isMounted && greeting) {
           const agentMsg: Message = {
             id: 'init-' + Date.now(),
@@ -121,8 +171,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
   useEffect(() => {
     if (agentType === AgentType.REAL_STUDENT) {
       socketService.onReceiveMessage((msg) => {
+        setPartnerTyping(false);
         setMessages(prev => [...prev, msg]);
       });
+      if (!giveaways) {
+        socketService.onPartnerTyping(() => {
+          setPartnerTyping(true);
+          if (partnerTypingTimeoutRef.current) window.clearTimeout(partnerTypingTimeoutRef.current);
+          partnerTypingTimeoutRef.current = window.setTimeout(() => setPartnerTyping(false), 3000);
+        });
+      }
       socketService.onPartnerDisconnected(() => {
         if (finishedRef.current) return;
         const systemMsg: Message = {
@@ -135,16 +193,16 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
         finishedRef.current = true;
         setTimeout(() => {
           const stats = buildStats(Date.now());
-          onFinished(stats);
+          onFinished(stats, messagesRef.current, 'partner_disconnected');
         }, 5000);
       });
     }
-  }, [agentType, buildStats, onFinished]);
+  }, [agentType, giveaways, buildStats, onFinished]);
 
   // Scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, partnerTyping]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -156,7 +214,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
           }
           finishedRef.current = true;
           const stats = buildStats(Date.now());
-          onFinished(stats);
+          onFinished(stats, messagesRef.current, 'timer');
           return 0;
         }
         return prev - 1000;
@@ -174,12 +232,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
     if (finishedRef.current) return;
     finishedRef.current = true;
     const stats = buildStats(Date.now());
-    onFinished(stats);
+    onFinished(stats, messagesRef.current, 'ended_early');
   };
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputText.trim() || isTyping) return;
+    if (!inputText.trim() || inputLocked) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -188,38 +246,42 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
       timestamp: Date.now()
     };
 
+    const history = messagesRef.current;
+    messagesRef.current = [...history, userMsg];
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
-    
-    // For bots, we show "isTyping". For real students, we don't necessarily know 
-    // (unless we add socket typing events), but we don't block input.
-    if (agentType !== AgentType.REAL_STUDENT) {
-      setIsTyping(true);
+
+    if (!isBot) {
+      // Real student responses come via the socket listener above.
+      socketService.sendMessage(userMsg.text);
+      return;
     }
 
+    if (!giveaways) {
+      deliverMatched(() => fetchReply(agentType, sessionId, history, userMsg.text), readDelayMs(userMsg.text));
+      return;
+    }
+
+    setIsTyping(true);
+
     try {
-      const history = messagesRef.current;
-      const responseText = await sendToAgent(agentType, history, userMsg.text);
-      
-      // Only add response here if it's NOT a real student.
-      // Real student responses come via the useEffect listener above.
-      if (agentType !== AgentType.REAL_STUDENT && responseText) {
-        const agentMsg: Message = {
-          id: (Date.now() + 1).toString(),
-          sender: 'agent',
-          text: responseText,
-          timestamp: Date.now()
-        };
-        setMessages(prev => [...prev, agentMsg]);
-      }
+      const responseText = await sendToAgentLegacy(agentType, sessionId, history, userMsg.text);
+      if (responseText) addAgentMessage(responseText);
     } catch (error) {
       console.error("Failed to get response", error);
     } finally {
-      if (agentType !== AgentType.REAL_STUDENT) {
-        setIsTyping(false);
-      }
+      setIsTyping(false);
       // Re-focus input after response
       setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputText(e.target.value);
+    // Let a human partner see "typing...", as they would for a bot.
+    if (!giveaways && !isBot && Date.now() - lastTypingEmitRef.current > 1000) {
+      lastTypingEmitRef.current = Date.now();
+      socketService.sendTyping();
     }
   };
 
@@ -254,7 +316,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && !isTyping && (
+        {messages.length === 0 && !isTyping && !partnerTyping && (
           <div className="flex h-full items-center justify-center text-gray-600 italic">
             Start the conversation...
           </div>
@@ -277,7 +339,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
             </div>
           </div>
         ))}
-        {isTyping && (
+        {(isTyping || partnerTyping) && (
            <div className="flex justify-start w-full">
              <div className="bg-gray-700 px-4 py-3 rounded-2xl rounded-bl-none flex space-x-1 items-center">
                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
@@ -296,14 +358,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ condition, agentType, on
             ref={inputRef}
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             placeholder="Type your message..."
             className="flex-1 bg-gray-900 border border-gray-600 text-gray-100 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            disabled={isTyping}
+            disabled={inputLocked}
           />
           <button
             type="submit"
-            disabled={!inputText.trim() || isTyping}
+            disabled={!inputText.trim() || inputLocked}
             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-full p-2 w-10 h-10 flex items-center justify-center transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">

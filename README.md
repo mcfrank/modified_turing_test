@@ -10,36 +10,36 @@ This is a modified Turing Test experiment for the SymSys 1 course. It is a web a
 - Evaluate the interaction
 - View the results
 
-## Rebuild + Redeploy (Cloud Run)
+## Deployment (Cloud Run, hs-hs-langcog-gemini)
 
-These steps rebuild the Docker image and redeploy to Cloud Run.
+Live at https://symsys-turing-test-246740721864.us-central1.run.app (admin dashboard at `/admin`).
 
-You need the gcloud-cli installed and authenticated, as well as a Gemini API key and a Google Service Account JSON file.
+- Gemini runs on Vertex AI, billed to `hs-hs-langcog-gemini`, authenticated as the service account `turing-test-run@` (no API key).
+- Sessions, ratings, and transcripts go to Firestore (default database, collections `turing_sessions` and `turing_settings`).
+- The Llama base/post-trained models go through the Hugging Face router (`featherless-ai`); the token is the Secret Manager secret `turing-hf-token`.
+- `/admin` requires Google Sign-In with an account listed in `ADMIN_EMAILS`.
 
-1. Authenticate and set project:
-   `gcloud auth login`
-   `gcloud config set project gen-lang-client-0788134412`
+To redeploy: `ADMIN_EMAILS=a@stanford.edu,b@stanford.edu GOOGLE_OAUTH_CLIENT_ID=... ./deploy.sh`
 
-2. Set up the Docker repository:
-   `gcloud auth configure-docker us-west2-docker.pkg.dev`
+One-time setup (already done): service account `turing-test-run` with `roles/aiplatform.user` and `roles/datastore.user`, plus `roles/secretmanager.secretAccessor` restricted by an IAM condition to `turing-hf-token`; Artifact Registry repo `turing-test` (us-central1); an OAuth 2.0 Web client whose authorized JavaScript origins include the service URL and `http://localhost:3000`.
 
-3. Build the image and deploy to Cloud Run:
+## Running a class session
 
-```
-gcloud builds submit --tag us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest .
-gcloud run deploy symtest --image us-west2-docker.pkg.dev/gen-lang-client-0788134412/symtest/symtest:latest --platform managed --region us-west2 --allow-unauthenticated --port 8080
-```
+1. In `/admin`, start a new run (e.g. `2027-winter-lecture`) so new sessions are tagged with it, and pick the interface mode.
+   - **Giveaways off** (default): bots and humans look the same. Nobody is forced to speak first, typing indicators and timing match human typing, input never locks, and Gemini-as-student uses a terse prompt.
+   - **Giveaways on**: the original interface, in which bots greet first, show typing instantly, lock the input, and reply after a fixed delay, and Gemini-as-student uses the original verbose prompt. Toggling between modes in class shows how much judgments depend on surface cues.
+2. Filter the dashboard by time range and run. CSV export follows the filters.
+3. The model APIs only answer for live, server-issued sessions: at most 6 minutes and 60 messages each.
 
 ## Running the application locally
 
 1. Install dependencies:
    `cd backend && npm install`
    `cd ../frontend && npm install`
-2. Set env vars in `.envrc` (and run `direnv allow`):
-   - `GEMINI_API_KEY`
-   - `GOOGLE_SHEETS_ID`
-   - `GOOGLE_SHEETS_RANGE` (optional, default `Sheet1!A1`)
-   - `GOOGLE_SERVICE_ACCOUNT_BASE64` (or `GOOGLE_SERVICE_ACCOUNT_JSON`)
+2. Run `gcloud auth application-default login` (Vertex AI and Firestore use your credentials locally), then set env vars in `.envrc` (and run `direnv allow`):
+   - `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT=hs-hs-langcog-gemini`, `GOOGLE_CLOUD_LOCATION=global`
+   - `GEMINI_MODEL` (optional, default `gemini-3.5-flash`)
+   - `ADMIN_EMAILS`, `GOOGLE_OAUTH_CLIENT_ID` (for `/admin`)
    - `HF_TOKEN`
    - `HF_PROVIDER` (required, e.g. `featherless-ai`)
    - `HF_BASE_MODEL` (optional, default `meta-llama/Llama-3.1-8B`)

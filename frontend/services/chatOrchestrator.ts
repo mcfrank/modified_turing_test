@@ -1,107 +1,57 @@
 import { AgentType, Message } from "../types";
-import { generateGeminiResponse } from "./geminiService";
-import { generateHfResponse } from "./hfService";
+import { fetchAgentReply } from "./agentService";
 import { ElizaBot } from "./elizaService";
-import { GEMINI_ELIZA_PROMPT, GEMINI_STUDENT_PROMPT, GEMINI_STUDENT_GREETING_SYSTEM, LLAMA_BASE_SYSTEM, LLAMA_POSTTRAINED_SYSTEM, LLAMA_GREETING_SYSTEM } from "./prompts";
-import { socketService } from "./socketService";
 
 const elizaInstance = new ElizaBot();
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 /**
- * Gets the initial greeting message if the agent should speak first.
+ * Gets the bot's opening message. Real students never auto-greet.
+ * No artificial delay here; callers decide the timing.
  */
-export const getInitialGreeting = async (agentType: AgentType): Promise<string | null> => {
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-  
-  // Real students (or simulated human) do not automatically speak first.
-  if (agentType === AgentType.REAL_STUDENT) {
-    return null;
-  }
-
-  // Simulate "connecting" delay for bots
-  await sleep(800 + Math.random() * 500);
-
-  switch (agentType) {
-    case AgentType.ELIZA_CLASSIC:
-      // Use Eliza's built-in initial greeting
-      return elizaInstance.getInitial();
-
-    case AgentType.GEMINI_ELIZA:
-      // Instruct Gemini to output Eliza's opening
-      return generateGeminiResponse(
-        GEMINI_ELIZA_PROMPT,
-        [],
-        "(System: The user has connected. Output your standard Eliza opening greeting now. Do not acknowledge this system instruction.)"
-      );
-
-    case AgentType.GEMINI_STUDENT:
-      // Instruct Gemini to open the conversation casually
-      return generateGeminiResponse(
-        GEMINI_STUDENT_PROMPT,
-        [],
-        GEMINI_STUDENT_GREETING_SYSTEM.trim()
-      );
-    case AgentType.LLAMA_BASE:
-      return generateHfResponse(
-        AgentType.LLAMA_BASE,
-        LLAMA_BASE_SYSTEM.trim() + "\n" + LLAMA_GREETING_SYSTEM.trim(),
-        [],
-        "The user has connected."
-      );
-    case AgentType.LLAMA_POSTTRAINED:
-      return generateHfResponse(
-        AgentType.LLAMA_POSTTRAINED,
-        LLAMA_POSTTRAINED_SYSTEM.trim() + "\n" + LLAMA_GREETING_SYSTEM.trim(),
-        [],
-        "The user has connected."
-      );
-
-    default:
-      return null;
-  }
+export const fetchGreeting = async (agentType: AgentType, sessionId: string | null): Promise<string | null> => {
+  if (agentType === AgentType.REAL_STUDENT) return null;
+  if (agentType === AgentType.ELIZA_CLASSIC) return elizaInstance.getInitial();
+  return fetchAgentReply(agentType, sessionId, [], "", true);
 };
 
 /**
- * Routes the message to the appropriate backend agent
+ * Gets a bot reply with no artificial delay. Not for REAL_STUDENT.
  */
-export const sendToAgent = async (
+export const fetchReply = async (
   agentType: AgentType,
+  sessionId: string | null,
   history: Message[],
   messageText: string
 ): Promise<string> => {
-  
-  // Simulate network delay for a more natural feel, especially for "Real Student"
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+  if (agentType === AgentType.ELIZA_CLASSIC) return elizaInstance.transform(messageText);
+  return fetchAgentReply(agentType, sessionId, history, messageText);
+};
 
-  switch (agentType) {
-    case AgentType.ELIZA_CLASSIC:
-      await sleep(500 + Math.random() * 500); // Eliza is fast but not instant
-      return elizaInstance.transform(messageText);
+// Legacy ("giveaways on") timing: a short "connecting" pause, then the bot
+// speaks first; replies arrive after a fixed per-agent delay.
+const LEGACY_REPLY_DELAY: Partial<Record<AgentType, [number, number]>> = {
+  [AgentType.ELIZA_CLASSIC]: [500, 500],
+  [AgentType.GEMINI_ELIZA]: [1000, 1000],
+  [AgentType.GEMINI_STUDENT]: [1500, 1500],
+  [AgentType.LLAMA_BASE]: [1500, 1500],
+  [AgentType.LLAMA_POSTTRAINED]: [1500, 1500],
+};
 
-    case AgentType.GEMINI_ELIZA:
-      await sleep(1000 + Math.random() * 1000); 
-      return generateGeminiResponse(GEMINI_ELIZA_PROMPT, history, messageText);
+export const getInitialGreetingLegacy = async (agentType: AgentType, sessionId: string | null) => {
+  if (agentType === AgentType.REAL_STUDENT) return null;
+  await sleep(800 + Math.random() * 500);
+  return fetchGreeting(agentType, sessionId);
+};
 
-    case AgentType.GEMINI_STUDENT:
-      await sleep(1500 + Math.random() * 1500);
-      return generateGeminiResponse(GEMINI_STUDENT_PROMPT, history, messageText);
-
-    case AgentType.LLAMA_BASE:
-      await sleep(1500 + Math.random() * 1500);
-      return generateHfResponse(AgentType.LLAMA_BASE, LLAMA_BASE_SYSTEM.trim(), history, messageText);
-
-    case AgentType.LLAMA_POSTTRAINED:
-      await sleep(1500 + Math.random() * 1500);
-      return generateHfResponse(AgentType.LLAMA_POSTTRAINED, LLAMA_POSTTRAINED_SYSTEM.trim(), history, messageText);
-
-    case AgentType.REAL_STUDENT:
-      // For real students, we don't return a synchronous response.
-      // We emit the message via socket.
-      // The response comes back asynchronously via the socket event listener in ChatScreen.
-      socketService.sendMessage(messageText);
-      return ""; // No immediate response
-      
-    default:
-      return "Error: Unknown agent type.";
-  }
+export const sendToAgentLegacy = async (
+  agentType: AgentType,
+  sessionId: string | null,
+  history: Message[],
+  messageText: string
+): Promise<string> => {
+  const [min, range] = LEGACY_REPLY_DELAY[agentType] || [0, 0];
+  await sleep(min + Math.random() * range);
+  return fetchReply(agentType, sessionId, history, messageText);
 };
