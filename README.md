@@ -12,16 +12,18 @@ This is a modified Turing Test experiment for the SymSys 1 course. It is a web a
 
 ## Deployment (Cloud Run, hs-hs-langcog-gemini)
 
-Live at https://symsys-turing-test-246740721864.us-central1.run.app (admin dashboard at `/admin`).
+Live at https://symsys-turing-test-246740721864.us-west2.run.app (admin dashboard at `/admin`).
+
+The service runs in us-west2 because Hugging Face rate-limits (HTTP 429, even for `whoami`) the shared egress IPs Cloud Run uses in us-central1. If that starts happening in us-west2 too, the robust fix is a static egress IP (Direct VPC egress + Cloud NAT).
 
 - Gemini runs on Vertex AI, billed to `hs-hs-langcog-gemini`, authenticated as the service account `turing-test-run@` (no API key).
 - Sessions, ratings, and transcripts go to Firestore (default database, collections `turing_sessions` and `turing_settings`).
-- The Llama base/post-trained models go through the Hugging Face router (`featherless-ai`); the token is the Secret Manager secret `turing-hf-token`.
+- The Llama 3.1 8B base/instruct pair goes through the Hugging Face router: the base model on `featherless-ai` (the only provider serving base models), the instruct model on `deepinfra` (`HF_POSTTRAINED_PROVIDER`; featherless is often at capacity for it). The token is the Secret Manager secret `turing-hf-token`.
 - `/admin` requires Google Sign-In with an account listed in `ADMIN_EMAILS`.
 
 To redeploy: `ADMIN_EMAILS=a@stanford.edu,b@stanford.edu GOOGLE_OAUTH_CLIENT_ID=... ./deploy.sh`
 
-One-time setup (already done): service account `turing-test-run` with `roles/aiplatform.user` and `roles/datastore.user`, plus `roles/secretmanager.secretAccessor` restricted by an IAM condition to `turing-hf-token`; Artifact Registry repo `turing-test` (us-central1); an OAuth 2.0 Web client whose authorized JavaScript origins include the service URL and `http://localhost:3000`.
+One-time setup (already done): service account `turing-test-run` with `roles/aiplatform.user` and `roles/datastore.user`, plus `roles/secretmanager.secretAccessor` restricted by an IAM condition to `turing-hf-token`; Artifact Registry repo `turing-test` (us-central1; Cloud Run pulls across regions); an OAuth 2.0 Web client whose authorized JavaScript origins include the service URL and `http://localhost:3000`.
 
 ## Running a class session
 
@@ -42,6 +44,7 @@ One-time setup (already done): service account `turing-test-run` with `roles/aip
    - `ADMIN_EMAILS`, `GOOGLE_OAUTH_CLIENT_ID` (for `/admin`)
    - `HF_TOKEN`
    - `HF_PROVIDER` (required, e.g. `featherless-ai`)
+   - `HF_POSTTRAINED_PROVIDER` (optional, defaults to `HF_PROVIDER`; e.g. `deepinfra`)
    - `HF_BASE_MODEL` (optional, default `meta-llama/Llama-3.1-8B`)
    - `HF_POSTTRAINED_MODEL` (optional, default `meta-llama/Llama-3.1-8B-Instruct`)
    - `VITE_DEBUG_MODE=true` (optional)

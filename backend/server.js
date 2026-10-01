@@ -55,9 +55,11 @@ const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI
 const geminiClient = new GoogleGenAI(GEMINI_API_KEY ? { apiKey: GEMINI_API_KEY } : {});
 
 const HF_TOKEN = process.env.HF_TOKEN || '';
-const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Meta-Llama-3.1-8B';
+const HF_BASE_MODEL = process.env.HF_BASE_MODEL || 'meta-llama/Llama-3.1-8B';
 const HF_POSTTRAINED_MODEL = process.env.HF_POSTTRAINED_MODEL || 'meta-llama/Llama-3.1-8B-Instruct';
 const HF_PROVIDER = process.env.HF_PROVIDER || '';
+// Base models are only served by featherless-ai; instruct models have more providers.
+const HF_POSTTRAINED_PROVIDER = process.env.HF_POSTTRAINED_PROVIDER || HF_PROVIDER;
 const HF_BASE_URL = process.env.HF_BASE_URL || 'https://router.huggingface.co';
 const HF_BASE_MAX_TOKENS = Number.parseInt(process.env.HF_BASE_MAX_TOKENS || '60', 10);
 
@@ -164,7 +166,7 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
   if (!HF_TOKEN) {
     throw new Error('HF_TOKEN missing');
   }
-  const providerModel = `${model}:${HF_PROVIDER}`;
+  const providerModel = `${model}:${HF_POSTTRAINED_PROVIDER}`;
   const url = mode === 'text'
     ? `${HF_BASE_URL}/${encodeURIComponent(HF_PROVIDER)}/v1/completions`
     : `${HF_BASE_URL}/v1/chat/completions`;
@@ -180,7 +182,7 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
       stop: ['\nHUMAN:'],
     }
     : { model: providerModel, messages: buildHfMessages(systemInstruction, history, lastMessage), stream: false };
-  const response = await fetch(url, {
+  const post = () => fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${HF_TOKEN}`,
@@ -188,6 +190,12 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
     },
     body: JSON.stringify(body),
   });
+  let response = await post();
+  if (response.status === 503 || response.status === 429) {
+    // Providers intermittently report "temporarily at capacity"; retry once.
+    await new Promise((r) => setTimeout(r, 1500));
+    response = await post();
+  }
   if (!response.ok) {
     const errText = (await response.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
     throw new Error(`HF error: ${response.status} ${errText}`);
