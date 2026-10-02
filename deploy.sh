@@ -11,7 +11,7 @@ IMAGE=us-central1-docker.pkg.dev/$PROJECT/turing-test/turing-test:$(git rev-pars
 # Comma-separated Google accounts allowed into /admin.
 ADMIN_EMAILS=${ADMIN_EMAILS:-mcfrank@stanford.edu,ngoodman@stanford.edu,bkrejci@stanford.edu}
 # OAuth 2.0 Web client ID for admin sign-in (APIs & Services > Credentials).
-GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-246740721864-enerq8jieean4r1qq9gsrqoiktsl5llg.apps.googleusercontent.com}
 
 gcloud builds submit --project "$PROJECT" --tag "$IMAGE" .
 
