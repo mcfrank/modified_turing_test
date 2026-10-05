@@ -19,6 +19,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const CONDITIONS = {
+  ELIZA_ONLY: 'Chat with Eliza',
   ELIZA_VS_GEMINI: 'Eliza vs. Gemini',
   GEMINI_VS_STANFORD: 'Gemini vs. Stanford',
   BASE_VS_POSTTRAINED: 'Base vs. Post-trained',
@@ -211,6 +212,9 @@ const generateHuggingFaceResponse = async (model, systemInstruction, history, la
 
 const pickAgentForCondition = (condition) => {
   const random = Math.random();
+  if (condition === CONDITIONS.ELIZA_ONLY) {
+    return AGENTS.ELIZA_CLASSIC;
+  }
   if (condition === CONDITIONS.ELIZA_VS_GEMINI) {
     return random < 0.5 ? AGENTS.ELIZA_CLASSIC : AGENTS.GEMINI_ELIZA;
   }

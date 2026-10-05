@@ -11,6 +11,9 @@ export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, o
   const [rating, setRating] = useState<number | null>(null);
 
   const getQuestion = () => {
+    if (condition === Condition.ELIZA_ONLY) {
+      return "How human-like did Eliza seem?";
+    }
     if (condition === Condition.ELIZA_VS_GEMINI) {
       return "How much did you feel like you were talking to a 'classic' mechanical program versus a modern intelligent agent?";
     }
@@ -22,6 +25,9 @@ export const EvaluationScreen: React.FC<EvaluationScreenProps> = ({ condition, o
   };
 
   const getLabels = () => {
+    if (condition === Condition.ELIZA_ONLY) {
+        return ["Not at all human-like", "Very human-like"];
+    }
     if (condition === Condition.ELIZA_VS_GEMINI) {
         return ["Definitely Classic Eliza", "Definitely Modern AI"];
     }

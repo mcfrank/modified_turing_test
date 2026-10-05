@@ -6,6 +6,7 @@ export enum AppScreen {
 }
 
 export enum Condition {
+  ELIZA_ONLY = 'Chat with Eliza',
   ELIZA_VS_GEMINI = 'Eliza vs. Gemini',
   GEMINI_VS_STANFORD = 'Gemini vs. Stanford',
   BASE_VS_POSTTRAINED = 'Base vs. Post-trained',

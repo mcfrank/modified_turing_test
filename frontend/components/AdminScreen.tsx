@@ -30,9 +30,10 @@ interface SessionRow {
 
 interface Settings { giveaways: boolean; run: string; runs: string[] }
 
-// Per condition: the two agents (first = series 1, second = series 2) and the
+// Per condition: the agents (first = series 1, second = series 2) and the
 // rating-scale anchors shown to students on the evaluation screen.
-const CONDITION_SPECS: { condition: Condition; agents: [AgentType, AgentType]; anchors: [string, string] }[] = [
+const CONDITION_SPECS: { condition: Condition; agents: AgentType[]; anchors: [string, string] }[] = [
+  { condition: Condition.ELIZA_ONLY, agents: [AgentType.ELIZA_CLASSIC], anchors: ['Not at all human-like', 'Very human-like'] },
   { condition: Condition.ELIZA_VS_GEMINI, agents: [AgentType.ELIZA_CLASSIC, AgentType.GEMINI_ELIZA], anchors: ['Definitely Classic Eliza', 'Definitely Modern AI'] },
   { condition: Condition.GEMINI_VS_STANFORD, agents: [AgentType.REAL_STUDENT, AgentType.GEMINI_STUDENT], anchors: ['Definitely AI', 'Definitely Human'] },
   { condition: Condition.BASE_VS_POSTTRAINED, agents: [AgentType.LLAMA_BASE, AgentType.LLAMA_POSTTRAINED], anchors: ['Definitely Base', 'Definitely Post-trained'] },
@@ -139,7 +140,7 @@ const ConditionChart: React.FC<{ spec: typeof CONDITION_SPECS[number]; sessions:
 
         {spec.agents.map((a, i) => RATINGS.map((r, ri) => {
           const p = props[i][ri];
-          const x = xCenter(r) + (i === 0 ? -barW - 1 : 1);
+          const x = spec.agents.length === 1 ? xCenter(r) - barW / 2 : xCenter(r) + (i === 0 ? -barW - 1 : 1);
           const y = yScale(p);
           const label = `${AGENT_LABELS[a]} · rating ${r}`;
           const value = `${Math.round(p * 100)}% (${stats[i].counts[ri]} of ${stats[i].n})`;
@@ -312,7 +313,7 @@ export const AdminScreen: React.FC = () => {
   }
 
   const agentRows = CONDITION_SPECS.flatMap((spec) => spec.agents.map((a) => {
-    const rows = filtered.filter((s) => s.agentType === a);
+    const rows = filtered.filter((s) => s.condition === spec.condition && s.agentType === a);
     const done = rows.filter((s) => s.status === 'completed');
     const ratings = done.filter((s) => typeof s.rating === 'number').map((s) => s.rating as number);
     return {
@@ -394,7 +395,7 @@ export const AdminScreen: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
           {CONDITION_SPECS.map((spec) => (
             <ConditionChart key={spec.condition} spec={spec} sessions={completed.filter((s) => s.condition === spec.condition)} />
           ))}
@@ -418,7 +419,7 @@ export const AdminScreen: React.FC = () => {
             </thead>
             <tbody className="tabular-nums">
               {agentRows.map((r) => (
-                <tr key={r.agent} className="border-b border-gray-800">
+                <tr key={`${r.condition}-${r.agent}`} className="border-b border-gray-800">
                   <td className="py-2 pr-3 text-gray-400">{r.condition}</td>
                   <td className="pr-3">{AGENT_LABELS[r.agent]}</td>
                   <td className="pr-3 text-right">{r.started}</td>
