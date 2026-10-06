@@ -49,9 +49,6 @@ const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const GEMINI_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'low'; // 3.8 Flash doesn't support 'minimal'
-const GEMINI_TEMPERATURE = Number.parseFloat(process.env.GEMINI_TEMPERATURE || '1.0');
-const GEMINI_TOP_P = Number.parseFloat(process.env.GEMINI_TOP_P || '0.95');
-const GEMINI_TOP_K = Number.parseInt(process.env.GEMINI_TOP_K || '40', 10);
 const GEMINI_SEED = process.env.GEMINI_SEED ? Number.parseInt(process.env.GEMINI_SEED, 10) : undefined;
 const geminiClient = new GoogleGenAI(GEMINI_API_KEY ? { apiKey: GEMINI_API_KEY } : {});
 
@@ -110,9 +107,6 @@ Model:
     contents: fullPrompt,
     config: {
       systemInstruction,
-      temperature: Number.isNaN(GEMINI_TEMPERATURE) ? 1.0 : GEMINI_TEMPERATURE,
-      topP: Number.isNaN(GEMINI_TOP_P) ? 0.95 : GEMINI_TOP_P,
-      topK: Number.isNaN(GEMINI_TOP_K) ? 40 : GEMINI_TOP_K,
       seed: GEMINI_SEED,
       thinkingConfig: { thinkingLevel: GEMINI_THINKING_LEVEL },
     },
