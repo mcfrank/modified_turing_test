@@ -47,8 +47,8 @@ const DEBUG_MODE = process.env.DEBUG_MODE === 'true';
 // service account in production) when GOOGLE_GENAI_USE_VERTEXAI=true and
 // GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION are set; otherwise GEMINI_API_KEY.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-const GEMINI_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'minimal';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const GEMINI_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || 'low'; // 3.8 Flash doesn't support 'minimal'
 const GEMINI_TEMPERATURE = Number.parseFloat(process.env.GEMINI_TEMPERATURE || '1.0');
 const GEMINI_TOP_P = Number.parseFloat(process.env.GEMINI_TOP_P || '0.95');
 const GEMINI_TOP_K = Number.parseInt(process.env.GEMINI_TOP_K || '40', 10);

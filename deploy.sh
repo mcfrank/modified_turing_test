@@ -23,4 +23,4 @@ gcloud run deploy "$SERVICE" \
   --max-instances 1 --concurrency 1000 --timeout 3600 --session-affinity \
   --cpu 1 --memory 1Gi --cpu-boost \
   --set-secrets HF_TOKEN=turing-hf-token:latest \
-  --set-env-vars "^|^GOOGLE_GENAI_USE_VERTEXAI=true|GOOGLE_CLOUD_PROJECT=$PROJECT|GOOGLE_CLOUD_LOCATION=global|GEMINI_MODEL=gemini-3.5-flash|HF_PROVIDER=featherless-ai|HF_POSTTRAINED_PROVIDER=deepinfra|HF_BASE_MODEL=meta-llama/Llama-3.1-8B|HF_POSTTRAINED_MODEL=meta-llama/Llama-3.1-8B-Instruct|HF_BASE_MAX_TOKENS=60|DEBUG_MODE=false|ADMIN_EMAILS=$ADMIN_EMAILS|GOOGLE_OAUTH_CLIENT_ID=$GOOGLE_OAUTH_CLIENT_ID"
+  --set-env-vars "^|^GOOGLE_GENAI_USE_VERTEXAI=true|GOOGLE_CLOUD_PROJECT=$PROJECT|GOOGLE_CLOUD_LOCATION=global|GEMINI_MODEL=gemini-3.8-flash|GEMINI_THINKING_LEVEL=low|HF_PROVIDER=featherless-ai|HF_POSTTRAINED_PROVIDER=deepinfra|HF_BASE_MODEL=meta-llama/Llama-3.1-8B|HF_POSTTRAINED_MODEL=meta-llama/Llama-3.1-8B-Instruct|HF_BASE_MAX_TOKENS=60|DEBUG_MODE=false|ADMIN_EMAILS=$ADMIN_EMAILS|GOOGLE_OAUTH_CLIENT_ID=$GOOGLE_OAUTH_CLIENT_ID"

@@ -40,7 +40,7 @@ One-time setup (already done): service account `turing-test-run` with `roles/aip
    `cd ../frontend && npm install`
 2. Run `gcloud auth application-default login` (Vertex AI and Firestore use your credentials locally), then set env vars in `.envrc` (and run `direnv allow`):
    - `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT=hs-hs-langcog-gemini`, `GOOGLE_CLOUD_LOCATION=global`
-   - `GEMINI_MODEL` (optional, default `gemini-3.5-flash`)
+   - `GEMINI_MODEL` (optional, default `gemini-3.8-flash`), `GEMINI_THINKING_LEVEL` (optional, default `low`)
    - `ADMIN_EMAILS`, `GOOGLE_OAUTH_CLIENT_ID` (for `/admin`)
    - `HF_TOKEN`
    - `HF_PROVIDER` (required, e.g. `featherless-ai`)
