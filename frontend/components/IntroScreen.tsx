@@ -24,7 +24,7 @@ export const IntroScreen: React.FC<IntroScreenProps> = ({ onSelectCondition, deb
       </p>
       <p className="text-gray-500 -mt-8 mb-12 max-w-lg text-sm">
         Chats are saved anonymously (no names or logins) and may be shown in class.
-        Please don't share anything personal.
+        Please don't share anything personal. Site built with Claude Opus 5.5.
       </p>
 
       {!debugMode && (

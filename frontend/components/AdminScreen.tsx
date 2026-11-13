@@ -329,7 +329,7 @@ export const AdminScreen: React.FC = () => {
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
-          <h1 className="text-2xl md:text-3xl font-bold">Turing Test Results</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Turing Test Results <span className="block text-xs font-normal text-gray-500">Built with Claude Opus 5.5</span></h1>
           <button className="text-sm text-gray-400 hover:text-gray-200" onClick={() => { storage.clear(); setToken(null); }}>Sign out</button>
         </div>
 
